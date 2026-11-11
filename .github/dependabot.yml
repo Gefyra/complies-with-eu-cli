@@ -5,6 +5,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # chalk >= 5 and inquirer >= 9 are ESM-only; the CLI is CommonJS and uses
+      # require(). Upgrading needs a migration (dynamic import() or ESM), not a bump.
+      - dependency-name: chalk
+        update-types: ["version-update:semver-major"]
+      - dependency-name: inquirer
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
