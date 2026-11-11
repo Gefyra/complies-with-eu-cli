@@ -1,0 +1,6 @@
+FHIR Validation tool Version 6.0.0
+-- Validating /tmp/ex/Patient-a.json --
+*SUCCESS*: 0 errors, 0 warnings, 0 notes
+-- Validating /tmp/ex/Patient-b.json --
+*FAILURE*: 1 errors, 0 warnings, 0 notes
+  Error @ Patient: legacy failure {LEGACY_ERR}

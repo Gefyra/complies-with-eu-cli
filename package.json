@@ -1,0 +1,68 @@
+{
+  "name": "@gefyra/complies-with-eu",
+  "version": "1.2.0",
+  "description": "CLI that checks whether FHIR profiles comply with the HL7 Europe (EU) profiles, using the compliesWithProfile extension and the HL7 FHIR validator",
+  "keywords": [
+    "fhir",
+    "hl7",
+    "hl7-europe",
+    "eu",
+    "ehds",
+    "xt-ehr",
+    "profile",
+    "validation",
+    "compliesWithProfile",
+    "structuredefinition",
+    "cli"
+  ],
+  "homepage": "https://github.com/Gefyra/complies-with-eu-cli#readme",
+  "bugs": {
+    "url": "https://github.com/Gefyra/complies-with-eu-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gefyra/complies-with-eu-cli.git"
+  },
+  "license": "Apache-2.0",
+  "author": "Gefyra GmbH <js@gefyra.de>",
+  "type": "commonjs",
+  "bin": {
+    "complies-with-eu": "./bin/complies-with-eu.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "eu-packages.json",
+    "tools.json",
+    "java-validator-parameter.md",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "start": "node bin/complies-with-eu.js",
+    "test": "node --test",
+    "lint": "eslint ."
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "dependencies": {
+    "axios": "^1.21.0",
+    "chalk": "^4.1.2",
+    "commander": "^12.1.0",
+    "fs-extra": "^11.2.0",
+    "inquirer": "^8.2.6",
+    "ora": "^5.4.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^15.15.0"
+  }
+}

@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest an idea or an improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Which problem do you want to solve? What is hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should it work? Include example commands, flags or output if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or other approaches you have considered.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - CLI (complies-with-eu)
+        - Documentation
+        - Other
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I would like to work on this myself.

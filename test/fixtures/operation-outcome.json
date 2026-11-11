@@ -1,0 +1,27 @@
+{
+  "resourceType": "OperationOutcome",
+  "issue": [
+    {
+      "severity": "error",
+      "code": "structure",
+      "diagnostics": "The profile does not comply with claimed profile 'http://hl7.eu/fhir/base/StructureDefinition/patient-eu-core' because: slice error: The min value of '0' on the path Patient.name does not comply with the value '1' from the claimed profile, The constraint 'family.exists() or given.exists()' is defined in the claimed profile, but missing",
+      "expression": ["StructureDefinition"]
+    },
+    {
+      "severity": "error",
+      "code": "processing",
+      "details": { "coding": [{ "code": "Terminology_TX_Code_ValueSet" }], "text": "Unknown code" },
+      "location": ["StructureDefinition.differential"]
+    },
+    {
+      "severity": "warning",
+      "code": "informational",
+      "extension": [{ "url": "http://hl7.org/fhir/StructureDefinition/operationoutcome-message-id", "valueString": "EXT_MSG_ID" }],
+      "diagnostics": "Warning with message-id extension"
+    },
+    {
+      "severity": "information",
+      "diagnostics": "Note with suffix id {SUFFIX_ID}"
+    }
+  ]
+}

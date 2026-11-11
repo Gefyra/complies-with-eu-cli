@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [20, 22, 24]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+
+      - name: Lint
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run lint
+
+      - name: User-facing text must be English (no German umlauts)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          if grep -rnP '[äöüÄÖÜß]' src bin tools.json java-validator-parameter.md; then
+            echo "::error::Found German characters in user-facing sources (all UI text must be English)."
+            exit 1
+          fi
+
+      - name: Unit tests
+        run: npm test
+
+      - name: CLI smoke test
+        run: |
+          node bin/complies-with-eu.js --help
+          node bin/complies-with-eu.js --version
+
+      - name: Check npm package contents
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e '
+            const files = JSON.parse(require("fs").readFileSync("pack.json", "utf8"))[0].files.map(f => f.path);
+            console.log(files.join("\n"));
+            const forbidden = /^(server|\.claude|\.github|test|workdir|\.tools|docs|node_modules)\/|^pk_|\.env$|^\.complies-with-cache\.json$/;
+            const bad = files.filter(p => forbidden.test(p));
+            if (bad.length) {
+              console.error("::error::npm tarball contains files that must not be published:\n" + bad.join("\n"));
+              process.exit(1);
+            }
+            for (const required of ["bin/complies-with-eu.js", "LICENSE", "eu-packages.json", "tools.json", "java-validator-parameter.md"]) {
+              if (!files.includes(required)) {
+                console.error("::error::npm tarball is missing " + required);
+                process.exit(1);
+              }
+            }
+            console.log(`OK: ${files.length} files`);
+          '
+
+      - name: Audit production dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: npm audit --omit=dev --audit-level=high
+
+  java:
+    name: Java environment check (doctor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `init` is skipped on purpose (it downloads ~200 MB of tools and EU packages,
+      # which makes CI slow and flaky). Without it, doctor reports the missing tools
+      # and exits 2; this job checks that Node and Java are detected correctly and
+      # that the JSON output is well-formed.
+      - name: Run doctor
+        env:
+          COMPLIES_WITH_EU_HOME: ${{ runner.temp }}/complies-with-eu-home
+        run: |
+          node bin/complies-with-eu.js doctor || true
+          set +e
+          node bin/complies-with-eu.js doctor --json > doctor.json
+          code=$?
+          set -e
+          echo "doctor --json exit code: $code"
+          if [ "$code" -ne 0 ] && [ "$code" -ne 2 ]; then
+            echo "::error::doctor exited with unexpected code $code"
+            exit 1
+          fi
+          node -e '
+            const d = JSON.parse(require("fs").readFileSync("doctor.json", "utf8"));
+            if (!d.node || !d.node.ok) { console.error("::error::doctor: Node check failed"); process.exit(1); }
+            if (!d.java || !d.java.ok || d.java.major < 21) { console.error("::error::doctor: Java 21 not detected: " + JSON.stringify(d.java)); process.exit(1); }
+            if (!Array.isArray(d.tools) || !Array.isArray(d.problems)) { console.error("::error::doctor: unexpected JSON shape"); process.exit(1); }
+            console.log("Java " + d.java.major + " via " + d.java.source + "; problems: " + d.problems.length);
+          '

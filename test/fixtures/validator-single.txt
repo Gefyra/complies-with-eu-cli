@@ -1,0 +1,14 @@
+FHIR Validation tool Version 7.0.5 (Git# 0123456789ab). Built 2024-01-01T00:00:00Z
+  Java:   21.0.2 from /usr/lib/jvm/temurin-21 on amd64 (64bit). 4096MB available
+  Loading hl7.eu.fhir.base#0.1.0 - 120 resources (00:01.234)
+  Validate /tmp/work/Patient-modified.json
+Validating
+-- /tmp/work/Patient-modified.json ------------------------------------
+[0;31m*FAILURE*: 2 errors, 1 warnings, 1 notes[0;39m
+  Error @ StructureDefinition (line 1, col2): The profile does not comply with claimed profile 'http://hl7.eu/fhir/base/StructureDefinition/patient-eu-core' {SD_EXTENSION_COMPLIES_WITH_ERROR}
+    slice error: The min value of '0' on the path Patient.name does not comply with the value '1' from the claimed profile
+    slice error: The constraint 'family.exists() or given.exists()' is defined in the claimed profile, but missing
+  Error @ StructureDefinition.differential.element[3]: Unknown code 'xyz' {Terminology_TX_Code_ValueSet}
+  Warning @ StructureDefinition: Some warning without an id
+  Information @ StructureDefinition: An informational note {INFO_1}
+Done. Times: Loading: 00:10.000, validation: 00:01.000.

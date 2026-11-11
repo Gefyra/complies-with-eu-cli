@@ -1,0 +1,30 @@
+complies-with-eu
+Copyright 2026 Gefyra GmbH
+
+This product is licensed under the Apache License, Version 2.0
+(see the LICENSE file).
+
+Third-party tools downloaded at runtime
+---------------------------------------
+
+The following tools are NOT included in or redistributed with this
+repository or the npm package. They are downloaded from their official
+release locations by `complies-with-eu init` (into
+~/.complies-with-eu/tools or the configured tools directory). They remain
+subject to their own licenses:
+
+* HL7 FHIR Validator (validator_cli.jar)
+  https://github.com/hapifhir/org.hl7.fhir.core
+  Licensed under the Apache License, Version 2.0.
+
+* fhir-pkg-tool by Gefyra GmbH
+  https://github.com/Gefyra/fhir-pkg-tool
+  Licensed under the MIT License.
+
+FHIR packages
+-------------
+
+FHIR Implementation Guide packages (for example the HL7 Europe packages
+hl7.fhir.eu.* and any package you validate) are downloaded from FHIR
+package registries at runtime. They are not part of
+this project and remain subject to their own licenses and terms of use.

@@ -1,0 +1,28 @@
+{
+  "validator": {
+    "name": "HL7 FHIR Validator (validator_cli)",
+    "fileName": "validator_cli.jar",
+    "version": "7.0.5",
+    "url": "https://github.com/hapifhir/org.hl7.fhir.core/releases/download/7.0.5/validator_cli.jar",
+    "sha256": "9dfe9f305b0f9389eceade2a4a1c9a2740d7b0e614066fdf07a78b571c76d92f",
+    "repo": "hapifhir/org.hl7.fhir.core",
+    "assetPattern": "^validator_cli\\.jar$",
+    "urlTemplate": "https://github.com/hapifhir/org.hl7.fhir.core/releases/download/{version}/validator_cli.jar",
+    "versionEnv": "COMPLIES_WITH_EU_VALIDATOR_VERSION",
+    "license": "Apache-2.0",
+    "minJava": 17
+  },
+  "fhirPkgTool": {
+    "name": "fhir-pkg-tool",
+    "fileName": "fhir-pkg-tool.jar",
+    "version": "v0.5.0",
+    "url": "https://github.com/Gefyra/fhir-pkg-tool/releases/download/v0.5.0/fhir-pkg-tool.jar",
+    "sha256": "05f29fbbcf9aaa5051f66f1997e609fc1dcff3f93d7defbeed949086486eba04",
+    "repo": "Gefyra/fhir-pkg-tool",
+    "assetPattern": "^fhir-pkg-tool\\.jar$",
+    "urlTemplate": "https://github.com/Gefyra/fhir-pkg-tool/releases/download/{version}/fhir-pkg-tool.jar",
+    "versionEnv": "COMPLIES_WITH_EU_FHIR_PKG_TOOL_VERSION",
+    "license": "MIT",
+    "minJava": 21
+  }
+}

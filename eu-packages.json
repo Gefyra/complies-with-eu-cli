@@ -1,0 +1,37 @@
+[
+  {
+    "name": "base",
+    "packageName": "hl7.fhir.eu.base",
+    "version": "2.0.1"
+  },
+  {
+    "name": "eps",
+    "packageName": "hl7.fhir.eu.eps",
+    "version": "1.0.0-ballot"
+  },
+  {
+    "name": "hdr",
+    "packageName": "hl7.fhir.eu.hdr",
+    "version": "1.0.0"
+  },
+  {
+    "name": "laboratory",
+    "packageName": "hl7.fhir.eu.laboratory",
+    "version": "2.1.0"
+  },
+  {
+    "name": "mpd",
+    "packageName": "hl7.fhir.eu.mpd",
+    "version": "1.0.0"
+  },
+  {
+    "name": "imaging",
+    "packageName": "hl7.fhir.eu.imaging",
+    "version": "1.0.0-ballot"
+  },
+  {
+    "name": "api",
+    "packageName": "hl7.fhir.eu.health-data-api",
+    "version": "1.0.0-ballot"
+  }
+]

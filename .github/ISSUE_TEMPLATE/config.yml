@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Gefyra/complies-with-eu-cli/security/policy
+    about: Please report security issues privately as described in our security policy, not as a public issue.

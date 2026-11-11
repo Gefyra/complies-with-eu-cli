@@ -1,0 +1,16 @@
+FHIR Validation tool Version 7.0.5
+  Validate /tmp/ex/Patient-a.json
+  Validate /tmp/ex/Patient-b.json
+  Validate /tmp/ex/Patient-c.json
+Validating
+-- /tmp/ex/Patient-a.json ----------------------------------------------
+*SUCCESS*: 0 errors, 0 warnings, 1 notes
+  Information @ Patient: All OK {ALL_OK}
+-- /tmp/ex/Patient-b.json ----------------------------------------------
+*FAILURE*: 1 errors, 0 warnings, 0 notes
+  Error @ Patient.name[0] (line 5, col10): Patient.name.family: minimum required = 1, but only found 0 (from http://hl7.eu/fhir/base/StructureDefinition/patient-eu-core) {Validation_VAL_Profile_Minimum}
+-- C:\tmp\ex\Patient-c.json --------------------------------------------
+*FAILURE*: 2 errors, 0 warnings, 0 notes
+  Error @ Patient: first {E1}
+  Error @ Patient: second {E2}
+Done.

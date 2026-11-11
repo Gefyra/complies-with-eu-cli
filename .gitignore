@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Local tools, work directories and caches
+.tools/
+workdir/*
+.complies-with-cache.json
+pk_*/
+coverage/
+*.tgz
+
+# Environment files with secrets
+.env
+
+# Local agent / editor files
+.claude/
+.claude/settings.local.json
+.claude/plans/
+
