@@ -56,11 +56,13 @@ async function runInit(options = {}) {
 
   const spinner3 = ora('Running fhir-pkg-tool for EU packages...').start();
   try {
-    await downloadFhirPackages(euPackages);
-    spinner3.succeed(`All ${euPackages.length} EU packages downloaded`);
+    const { installed, logFile } = await downloadFhirPackages(euPackages, { verbose: !!options.verbose });
+    const deps = installed.length > euPackages.length ? ` (${installed.length} packages incl. dependencies)` : '';
+    spinner3.succeed(`All ${euPackages.length} EU packages downloaded${deps}`);
+    if (logFile && !options.verbose) console.log(chalk.gray(`  fhir-pkg-tool output: ${logFile}`));
   } catch (err) {
-    spinner3.fail(`Failed to download EU packages: ${err.message}`);
-    throw new CliError(`Failed to download EU packages: ${err.message}`);
+    spinner3.fail('Failed to download EU packages');
+    throw new CliError(err.message, { cause: err });
   }
 
   console.log(chalk.green('\nInitialization complete. You can now run:\n'));

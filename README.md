@@ -169,7 +169,7 @@ Global options: `-V, --version` prints the version, `-h, --help` shows help. `co
 ### init
 
 ```bash
-complies-with-eu init [--force]
+complies-with-eu init [--force] [--verbose]
 ```
 
 Checks Java first, then installs `validator_cli.jar` and `fhir-pkg-tool.jar` in the versions pinned in [`tools.json`](tools.json) into `~/.complies-with-eu/tools` (checksum-verified), and downloads all packages from [`eu-packages.json`](eu-packages.json) into `~/.fhir/packages`.
@@ -177,6 +177,7 @@ Checks Java first, then installs `validator_cli.jar` and `fhir-pkg-tool.jar` in 
 | Option | Description |
 |--------|-------------|
 | `--force` | Force re-download of the tools even if already present |
+| `--verbose` | Stream the full fhir-pkg-tool output (default: written to `~/.complies-with-eu/logs/fhir-pkg-tool.log`) |
 
 ### doctor
 
@@ -214,7 +215,7 @@ What happens:
 | `--output <file>` | Write JSON output to file instead of stdout (requires `--json`) |
 | `--fail-on-noncompliant` | Exit with code 1 if a selected EU profile is not fulfilled |
 | `--workdir <dir>` | Directory for reports and intermediate files (default: `<home>/workdir`) |
-| `--verbose` | Stream the full HL7 FHIR Validator output to stderr (default: concise progress only; the full output is always written to a log file in the workdir) |
+| `--verbose` | Stream the full HL7 FHIR Validator and fhir-pkg-tool output to stderr (default: concise progress only; the full output is always written to a log file) |
 | `--debug` | Print the full Java validator command and show stack traces (implies `--verbose`) |
 
 **Output.** By default the HL7 FHIR Validator output (often several hundred lines) is not shown. A progress indicator on stderr shows the current phase (loading packages, validating) and ends with the validator summary, for example `*FAILURE*: 34 errors, 1 warnings, 101 notes`. Without a terminal (CI, piped stderr) each phase is printed once as a plain line. The full output is always written to `<workdir>/<profile>-modified-raw.log`, and its path is printed. Use `--verbose` to stream it to stderr as well.
@@ -241,7 +242,7 @@ If the argument is an existing `.json` file, it runs in **todo-file mode**. Othe
 | `--reselect` | Package mode: force re-prompting even if `mapping.json` exists |
 | `--type <types>` | Package mode: comma-separated resource types to filter (e.g. `Patient,Observation`) |
 | `--server-port <port>` | Package mode: port for the local Java validator server (default: a free port; also `$VALIDATOR_SERVER_PORT`). A server already running there is reused only if it has the package loaded |
-| `--verbose` | Stream the full HL7 FHIR Validator output to stderr (default: concise progress only; the full output is always written to a log file in the workdir) |
+| `--verbose` | Stream the full HL7 FHIR Validator and fhir-pkg-tool output to stderr (default: concise progress only; the full output is always written to a log file) |
 | `--debug` | Print the full Java validator command and show stack traces (implies `--verbose`) |
 
 #### Todo-file mode
@@ -593,6 +594,7 @@ These parameters apply to `validate`, `validate-batch` and the local validator s
 |------|---------|--------------|
 | `~/.complies-with-eu/tools/` | `validator_cli.jar`, `fhir-pkg-tool.jar`, `versions.json` | `complies-with-eu init --force` |
 | `~/.complies-with-eu/workdir/` | Reports (`*-report.md`), modified profiles (`*-modified.json`), raw validator logs (`*-raw.log`, `examples/<slug>/_batch-raw.log`, `<package>/validator-server.log`, written on every run), `examples/`, package-mode folders | `complies-with-eu clean` (keeps reports and `mapping.json`), or delete the folder |
+| `~/.complies-with-eu/logs/fhir-pkg-tool.log` | Output of the last fhir-pkg-tool run (package downloads in `init`, `validate`, `search`); its path is printed when a download fails | Delete the file |
 | `~/.complies-with-eu/cache.json` | Your last interactive EU profile selection per canonical | Delete the file |
 | `~/.fhir/packages/` | Standard FHIR package cache, shared with other FHIR tools. Holds the EU packages, your packages and their dependencies. | Delete individual `name#version` folders; they are downloaded again when needed |
 

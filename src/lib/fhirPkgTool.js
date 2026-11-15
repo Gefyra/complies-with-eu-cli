@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'fs-extra';
 import chalk from 'chalk';
-import { getFhirPkgToolJar } from './config.js';
+import { getFhirPkgToolJar, getHome } from './config.js';
 import { getJavaCommand } from './javaCheck.js';
 import { track } from './processRegistry.js';
 
@@ -25,17 +25,21 @@ async function requirePkgToolJar() {
 /**
  * Runs fhir-pkg-tool to download a FHIR package.
  * @param {string} packageSpec - e.g. "hl7.fhir.eu.base@current"
+ * @param {{ verbose?: boolean }} [options] - verbose streams the tool output
+ * @returns {Promise<{ installed: string[], logFile: string|null }>}
  */
-async function downloadFhirPackage(packageSpec) {
+async function downloadFhirPackage(packageSpec, options = {}) {
   const jar = await requirePkgToolJar();
-  return runJar(jar, ['-p', packageSpec], [packageSpec]);
+  return runJar(jar, ['-p', packageSpec], [packageSpec], options);
 }
 
 /**
  * Runs multiple packages at once.
  * @param {Array<{packageName: string, version: string}>} packages
+ * @param {{ verbose?: boolean }} [options]
+ * @returns {Promise<{ installed: string[], logFile: string|null }>}
  */
-async function downloadFhirPackages(packages) {
+async function downloadFhirPackages(packages, options = {}) {
   const jar = await requirePkgToolJar();
   const args = [];
   const specs = [];
@@ -44,7 +48,78 @@ async function downloadFhirPackages(packages) {
     specs.push(spec);
     args.push('-p', spec);
   }
-  return runJar(jar, args, specs);
+  return runJar(jar, args, specs, options);
+}
+
+/**
+ * Error thrown when fhir-pkg-tool fails. `message` is a short, user-facing
+ * explanation; `output` holds the full tool output and `logFile` its location.
+ */
+class FhirPkgToolError extends Error {
+  constructor(message, { code = null, output = '', logFile = null, reason = null } = {}) {
+    super(message);
+    this.name = 'FhirPkgToolError';
+    this.code = code;
+    this.output = output;
+    this.logFile = logFile;
+    this.reason = reason;
+  }
+}
+
+/**
+ * Extracts the useful facts from fhir-pkg-tool output (pure, for tests):
+ * installed packages, per-package failures and the first Java exception
+ * message (stack frames are dropped).
+ * @param {string} output
+ * @returns {{ installed: string[], failures: Array<{spec: string, reason: string}>, exception: string|null, notFound: boolean, network: boolean }}
+ */
+function summarizeFhirPkgToolOutput(output) {
+  // eslint-disable-next-line no-control-regex
+  const lines = String(output).replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').split(/\r\n|\r|\n/);
+  const installed = [];
+  const failures = [];
+  let exception = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    let m = line.match(/^Installed package (\S+)/);
+    if (m) { installed.push(m[1]); continue; }
+    m = line.match(/^Failed to install requested package (\S+) \((.*)\)\.?/);
+    if (m) { failures.push({ spec: m[1], reason: m[2].trim() }); continue; }
+    if (!exception && /^(Exception in thread|Caused by:|[\w.$]+(Exception|Error)\b:?)/.test(line) && !/^\s*at /.test(raw)) {
+      exception = line.replace(/^Exception in thread "[^"]*"\s*/, '');
+    }
+  }
+  const text = [...failures.map(f => f.reason), exception || ''].join(' ');
+  return {
+    installed,
+    failures,
+    exception,
+    notFound: /unable to resolve package id|not found|404/i.test(text),
+    network: /UnknownHost|ConnectException|SocketTimeout|timed out|No route to host|SSLHandshake|Connection refused/i.test(text),
+  };
+}
+
+/**
+ * Builds the short user-facing message for a failed fhir-pkg-tool run (pure, for tests).
+ */
+function describeFhirPkgToolFailure({ code, specs, summary, logFile }) {
+  const what = specs.length === 1 ? `'${specs[0]}'` : specs.map(s => `'${s}'`).join(', ');
+  const lines = [];
+  if (summary.network) {
+    lines.push(`Could not download ${what}: the FHIR package registry could not be reached.`);
+    lines.push('Check your network connection or proxy settings (packages.fhir.org / Simplifier).');
+  } else if (summary.notFound) {
+    lines.push(`Package ${what} was not found in the FHIR package registry.`);
+    lines.push('Check the package name and version on https://packages.fhir.org or https://simplifier.net/packages.');
+  } else {
+    lines.push(`Could not download ${what} (fhir-pkg-tool exit code ${code}).`);
+  }
+  const reasons = summary.failures.length
+    ? summary.failures.map(f => `${f.spec}: ${f.reason}`)
+    : (summary.exception ? [summary.exception] : []);
+  for (const r of reasons.slice(0, 5)) lines.push(`  Reason: ${r.length > 300 ? `${r.slice(0, 300)}…` : r}`);
+  if (logFile) lines.push(`Full fhir-pkg-tool output: ${logFile}`);
+  return lines.join('\n');
 }
 
 /**
@@ -162,29 +237,48 @@ async function resolvePackageId(pkgDir) {
   return path.basename(pkgDir);
 }
 
+/** Location of the log with the output of the last fhir-pkg-tool run. */
+function getFhirPkgToolLogFile() {
+  return path.join(getHome(), 'logs', 'fhir-pkg-tool.log');
+}
+
 /**
- * Runs a JAR with Java. Child output goes to stderr so stdout stays clean
- * for --json output.
+ * Runs fhir-pkg-tool with Java. By default the tool output is captured (not
+ * shown) and written to ~/.complies-with-eu/logs/fhir-pkg-tool.log; with
+ * `verbose` it is streamed to stderr as well (stdout stays clean for --json).
+ * Rejects with a FhirPkgToolError carrying a short explanation.
  */
-function runJar(jar, args, specs = []) {
+function runJar(jar, args, specs = [], { verbose = false } = {}) {
   return new Promise((resolve, reject) => {
     const userHome = os.homedir();
     const jvmArgs = [`-Duser.home=${userHome}`, '-jar', jar, ...args];
-    process.stderr.write(chalk.gray(`  java -jar ${path.basename(jar)} ${args.join(' ')}\n`));
-    const proc = track(spawn(getJavaCommand(), jvmArgs, { stdio: ['ignore', 2, 2], windowsHide: true }));
-    proc.on('close', (code) => {
+    if (verbose) process.stderr.write(chalk.gray(`  java -jar ${path.basename(jar)} ${args.join(' ')}\n`));
+    const chunks = [];
+    const onData = (data) => {
+      chunks.push(data);
+      if (verbose) process.stderr.write(chalk.gray(data.toString()));
+    };
+    const proc = track(spawn(getJavaCommand(), jvmArgs, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }));
+    proc.stdout.on('data', onData);
+    proc.stderr.on('data', onData);
+    proc.on('close', async (code) => {
+      const output = Buffer.concat(chunks).toString('utf8');
+      let logFile = getFhirPkgToolLogFile();
+      try {
+        await fs.outputFile(logFile, `$ java ${jvmArgs.join(' ')}\n\n${output}`, 'utf8');
+      } catch {
+        logFile = null;
+      }
+      const summary = summarizeFhirPkgToolOutput(output);
       if (code !== 0) {
-        const what = specs.length ? ` while fetching ${specs.join(', ')}` : '';
-        reject(new Error(
-          `fhir-pkg-tool exited with code ${code}${what}. ` +
-          'Check the package name and version (https://packages.fhir.org or https://simplifier.net/packages) ' +
-          'and your network connection; the tool output above has details.'
-        ));
+        reject(new FhirPkgToolError(describeFhirPkgToolFailure({ code, specs, summary, logFile }), {
+          code, output, logFile, reason: summary.network ? 'network' : (summary.notFound ? 'not-found' : 'failed'),
+        }));
       } else {
-        resolve();
+        resolve({ installed: summary.installed, logFile });
       }
     });
-    proc.on('error', (err) => reject(new Error(`Could not start Java for fhir-pkg-tool: ${err.message}`)));
+    proc.on('error', (err) => reject(new FhirPkgToolError(`Could not start Java for fhir-pkg-tool: ${err.message}`)));
   });
 }
 
@@ -244,4 +338,8 @@ export {
   packageHasSnapshots,
   resolvePackageDependencyDirs,
   compareVersions,
+  FhirPkgToolError,
+  summarizeFhirPkgToolOutput,
+  describeFhirPkgToolFailure,
+  getFhirPkgToolLogFile,
 };

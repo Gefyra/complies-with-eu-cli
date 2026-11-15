@@ -24,6 +24,7 @@ import {
 import { generateExampleReport, appendExampleSummary, mdCell, mdText } from '../lib/reportGen.js';
 import {
   parsePackageSpec,
+  checkPackageArgument,
   writeErrorReport,
   prepareProfile,
   postProcessProfile,
@@ -84,7 +85,7 @@ function validatorRunOptions(options) {
  * Resolves a package directory, downloading it via fhir-pkg-tool when it is
  * missing, incomplete or has no snapshots.
  */
-async function ensurePackageDir(packageName, version, log) {
+async function ensurePackageDir(packageName, version, log, { verbose = false } = {}) {
   const packageSpec = `${packageName}@${version}`;
   try {
     const pkgDir = await resolvePackageDir(packageName, version);
@@ -102,13 +103,14 @@ async function ensurePackageDir(packageName, version, log) {
   } catch {
     const spinner = ora(`Downloading ${packageSpec}...`).start();
     try {
-      await downloadFhirPackage(packageSpec);
+      await downloadFhirPackage(packageSpec, { verbose });
       spinner.succeed(`Package ${packageSpec} downloaded`);
     } catch (err) {
       spinner.fail(`Failed to download ${packageSpec}`);
       throw new CliError(
-        `Package '${packageSpec}' could not be downloaded: ${err.message}\n` +
-        `To find the right package, try: complies-with-eu search <canonical>`
+        `${err.message}\n` +
+        'To find the package that contains a profile, try: complies-with-eu search <canonical URL>',
+        { cause: err }
       );
     }
     try {
@@ -201,6 +203,8 @@ async function validateExamples({ pkgDir, fhirType, slug, examplesDir, euCanonic
 async function runValidate(pkg, canonical, options = {}) {
   applyCommonOptions(options);
   const { log, out } = makeLoggers(options);
+  const pkgArgError = checkPackageArgument(pkg);
+  if (pkgArgError) throw new CliError(pkgArgError);
 
   log(chalk.bold('\ncomplies-with-eu validate\n'));
   if (!options._preflightDone) await ensureReady();
@@ -217,7 +221,7 @@ async function runValidate(pkg, canonical, options = {}) {
   if (pkgDir) {
     log(chalk.gray(`  Package dir (pre-resolved): ${pkgDir}`));
   } else {
-    pkgDir = await ensurePackageDir(packageName, version, log);
+    pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
   }
 
   // 2. Find the profile by canonical
@@ -236,7 +240,7 @@ async function runValidate(pkg, canonical, options = {}) {
   if (!profile.snapshot) {
     log(chalk.yellow(`  Profile '${canonical}' has no snapshot, downloading the package again via fhir-pkg-tool...`));
     await fs.remove(pkgDir);
-    pkgDir = await ensurePackageDir(packageName, version, log);
+    pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
     try {
       ({ profile } = await findProfileByCanonical(pkgDir, canonical));
     } catch (err) {
@@ -451,10 +455,10 @@ async function runValidateBatchFile(jsonFile, options = {}) {
     let pkgDir = pkgDirCache.get(packageSpec) ?? null;
     if (!pkgDir) {
       try {
-        pkgDir = await ensurePackageDir(packageName, version, log);
+        pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
         pkgDirCache.set(packageSpec, pkgDir);
       } catch (err) {
-        await fail(task, `Package ${packageSpec} could not be downloaded: ${err.message}`);
+        await fail(task, err.message);
         continue;
       }
     } else {
@@ -477,7 +481,7 @@ async function runValidateBatchFile(jsonFile, options = {}) {
       await fs.remove(pkgDir);
       pkgDirCache.delete(packageSpec);
       try {
-        pkgDir = await ensurePackageDir(packageName, version, log);
+        pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
         pkgDirCache.set(packageSpec, pkgDir);
         ({ profile } = await findProfileByCanonical(pkgDir, canonical));
       } catch (err) {
@@ -784,6 +788,8 @@ async function acquireLocalServer({ options, igIds, verifyCanonical, log, logFil
 async function runValidatePackage(pkgInput, options = {}) {
   applyCommonOptions(options);
   const { log, out } = makeLoggers(options);
+  const pkgArgError = checkPackageArgument(pkgInput);
+  if (pkgArgError) throw new CliError(pkgArgError);
 
   log(chalk.bold('\ncomplies-with-eu validate-batch (package mode)\n'));
   await ensureReady();
@@ -804,7 +810,7 @@ async function runValidatePackage(pkgInput, options = {}) {
   log(chalk.cyan(`Workdir: ${pkgWorkdir}\n`));
 
   // 2. Resolve/download package
-  const pkgDir = await ensurePackageDir(packageName, version, log);
+  const pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
 
   // 3. Resolve EU package directories once
   const euPackageDirs = await resolveEuPackageDirs({ log });

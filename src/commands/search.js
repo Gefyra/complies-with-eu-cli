@@ -10,7 +10,7 @@ import { makeProgressLogger } from '../lib/output.js';
 import { findAllProfilesInPackage, findEuProfilesByType } from '../lib/profileUtils.js';
 import { runValidate } from './validate.js';
 import { resolveCanonicalOnSimplifier } from '../lib/simplifierResolve.js';
-import { parsePackageSpec } from '../lib/validateCore.js';
+import { parsePackageSpec, checkPackageArgument } from '../lib/validateCore.js';
 
 /** Options passed through from search to validate. */
 function validateOptions(options, extra = {}) {
@@ -121,6 +121,8 @@ async function runSearch(pkg, options = {}) {
   if (pkg.startsWith('http://') || pkg.startsWith('https://')) {
     return runSearchByCanonical(pkg, options);
   }
+  const pkgArgError = checkPackageArgument(pkg, { allowCanonical: true });
+  if (pkgArgError) throw new CliError(pkgArgError);
 
   log(chalk.bold('\ncomplies-with-eu search\n'));
 
@@ -140,11 +142,11 @@ async function runSearch(pkg, options = {}) {
   } catch {
     spinner = ora(`Downloading ${packageSpec}...`).start();
     try {
-      await downloadFhirPackage(packageSpec);
+      await downloadFhirPackage(packageSpec, { verbose: !!(options.verbose || options.debug) });
       spinner.succeed(`Package ${packageSpec} downloaded`);
     } catch (err) {
       spinner.fail(`Failed to download ${packageSpec}`);
-      throw new CliError(`Package '${packageSpec}' could not be downloaded: ${err.message}`);
+      throw new CliError(err.message, { cause: err });
     }
     try {
       pkgDir = await resolvePackageDir(packageName, version);

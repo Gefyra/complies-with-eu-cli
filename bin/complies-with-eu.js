@@ -62,6 +62,7 @@ function buildProgram() {
     .command('init')
     .description('Download the pinned fhir-pkg-tool and HL7 FHIR validator (see tools.json) and all EU packages')
     .option('--force', 'Force re-download of the tools even if already present')
+    .option('--verbose', 'Stream the full fhir-pkg-tool output')
     .action(async (options) => (await import('../src/commands/init.js')).runInit(options));
 
   program

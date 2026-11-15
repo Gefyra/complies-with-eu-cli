@@ -35,6 +35,30 @@ function parsePackageSpec(input) {
 }
 
 /**
+ * Checks that a command-line argument can be a FHIR package id (optionally with
+ * @version / #version). FHIR package ids consist of at least two dot-separated
+ * parts, e.g. "de.gematik.isik". Returns null when plausible, otherwise a
+ * short user-facing explanation (pure, for tests).
+ * @param {string} input
+ * @param {{ allowCanonical?: boolean }} [opts] - true for commands that also accept a canonical URL
+ */
+function checkPackageArgument(input, { allowCanonical = false } = {}) {
+  const { packageName } = parsePackageSpec(String(input || '').trim());
+  if (/^[A-Za-z0-9][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)+$/.test(packageName)) return null;
+  const lines = [`'${input}' is not a FHIR package id${allowCanonical ? ' or a canonical URL' : ''}.`];
+  lines.push(allowCanonical ? 'Expected one of:' : 'Expected a FHIR package, for example:');
+  lines.push('  a package (name[@version]), e.g. de.gematik.isik@5.1.1 or hl7.fhir.uv.ips@2.0.0');
+  if (allowCanonical) {
+    lines.push('  a canonical URL, e.g. https://gematik.de/fhir/isik/StructureDefinition/ISiKPatient');
+    lines.push('  (Simplifier.net is then searched for packages that contain this profile)');
+  }
+  if (!/[/:]/.test(packageName)) {
+    lines.push(`If '${packageName}' is a profile name, use its canonical URL instead, or look it up on https://simplifier.net/search.`);
+  }
+  return lines.join('\n');
+}
+
+/**
  * Builds the Markdown of an error report (pure, for tests).
  */
 function buildErrorReport(canonical, packageSpec, message, date = new Date()) {
@@ -362,6 +386,7 @@ function toolInfo() {
 
 export {
   parsePackageSpec,
+  checkPackageArgument,
   buildErrorReport,
   writeErrorReport,
   prepareProfile,
