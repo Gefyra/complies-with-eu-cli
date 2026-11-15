@@ -18,7 +18,7 @@ updates:
       # commander >= 15 is ESM-only and requires Node >= 22.12; revisit when
       # Node 20 support is dropped (engines.node is ">=20").
       - dependency-name: commander
-        update-types: ["version-update:semver-major"]
+        versions: [">=15"]
 
   - package-ecosystem: github-actions
     directory: /
