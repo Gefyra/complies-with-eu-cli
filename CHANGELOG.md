@@ -9,9 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Breaking:** Node.js 22.13 or newer is required (`engines.node` is `>=22.13`). Node.js 20 is no longer supported. `doctor` reports an older Node.js version as a problem.
+- **Breaking:** Node.js 22.22.2 or a newer 22.x, 24.15.0 or a newer 24.x, or Node.js 26 and later is required (`engines.node` is `^22.22.2 || ^24.15.0 || >=26.0.0`, the range that inquirer 14 and its `@inquirer/*` packages support). Node.js 20, 23 and 25 are no longer supported. `doctor` reports an unsupported Node.js version as a problem.
+- Pressing Ctrl+C in an interactive prompt (EU profile selection in `validate`, the pickers of `search`, the mapping prompts of `validate-batch`) now prints `Cancelled.` on stderr and exits with code `130`. Exit code `130` is documented in the README and in `--help`.
 - The CLI is now an ES module package (`"type": "module"`). Commands, options, exit codes, the `--json` output, report formats and file locations are unchanged.
 - Updated dependencies: chalk 4 → 6, ora 5 → 10, inquirer 8 → 14, commander 14 → 15. These versions are ESM-only and are now used directly.
+
+### Fixed
+
+- The CLI no longer exits silently with code 0 when Node.js resolves the entry point differently from the real path of the script, for example `node bin/complies-with-eu --version` (without `.js`) or `node --preserve-symlinks-main` through a linked directory.
 
 ## [1.3.1] - 2026-11-15
 

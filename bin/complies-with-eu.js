@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Command, CommanderError } from 'commander';
 import chalk from 'chalk';
 import { getPackageInfo } from '../src/lib/config.js';
@@ -29,9 +30,10 @@ Validator output:
   its path is printed when the validator fails. Use --verbose to stream it to stderr.
 
 Exit codes:
-  0  success (also when profiles are non-compliant, unless --fail-on-noncompliant is set)
-  1  at least one selected EU profile is not fulfilled (only with --fail-on-noncompliant)
-  2  usage or operational error (Java missing, not initialised, package not found, validator crash)
+  0    success (also when profiles are non-compliant, unless --fail-on-noncompliant is set)
+  1    at least one selected EU profile is not fulfilled (only with --fail-on-noncompliant)
+  2    usage or operational error (Java missing, not initialised, package not found, validator crash)
+  130  cancelled with Ctrl+C in an interactive prompt
 
 Environment variables:
   COMPLIES_WITH_EU_HOME                 state directory (default ~/.complies-with-eu: tools/, workdir/, cache.json)
@@ -157,38 +159,76 @@ function wantsStack(argv) {
   return argv.includes('--debug') || !!process.env.DEBUG;
 }
 
+/**
+ * Prints the error that ended a command and sets process.exitCode accordingly.
+ */
+function handleError(err, argv = process.argv) {
+  if (err instanceof CommanderError) {
+    // Help and --version end with exit code 0; commander already printed usage errors.
+    process.exitCode = err.exitCode === 0 ? EXIT.OK : EXIT.ERROR;
+    return;
+  }
+  if (err && err.name === 'ExitPromptError') {
+    // inquirer: the user pressed Ctrl+C in a prompt.
+    process.stderr.write('\nCancelled.\n');
+    process.exitCode = EXIT.CANCELLED;
+    return;
+  }
+  const message = err instanceof CliError ? err.message : `Unexpected error: ${err && err.message ? err.message : err}`;
+  process.stderr.write(chalk.red(`\nError: ${message}\n`));
+  if (wantsStack(argv) && err && err.stack) process.stderr.write(chalk.gray(`${err.stack}\n`));
+  process.exitCode = err instanceof CliError ? err.exitCode : EXIT.ERROR;
+}
+
 async function main(argv = process.argv) {
   const program = buildProgram();
   try {
     await program.parseAsync(argv);
   } catch (err) {
-    if (err instanceof CommanderError) {
-      // Help and --version end with exit code 0; commander already printed usage errors.
-      process.exitCode = err.exitCode === 0 ? EXIT.OK : EXIT.ERROR;
-      return;
-    }
-    const message = err instanceof CliError ? err.message : `Unexpected error: ${err && err.message ? err.message : err}`;
-    process.stderr.write(chalk.red(`\nError: ${message}\n`));
-    if (wantsStack(argv) && err && err.stack) process.stderr.write(chalk.gray(`${err.stack}\n`));
-    process.exitCode = err instanceof CliError ? err.exitCode : EXIT.ERROR;
+    handleError(err, argv);
+  }
+}
+
+function realpathOrNull(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return null;
   }
 }
 
 /**
  * True when this file is the entry point (run directly or through the npm bin
  * link or shim), false when it is imported, for example by the tests.
+ *
+ * Node does not resolve the main module in one fixed way: it appends ".js" to
+ * an extensionless path, and with --preserve-symlinks-main import.meta.url keeps
+ * the link path. So several forms of argv[1] are compared with this file's path
+ * and its realpath. (import.meta.main would do this, but needs Node >= 24.2.)
  */
-function isEntryPoint(argv1 = process.argv[1]) {
+function isEntryPoint(argv1 = process.argv[1], selfUrl = import.meta.url) {
   if (!argv1) return false;
+  let self;
   try {
-    return pathToFileURL(fs.realpathSync(argv1)).href === import.meta.url;
+    self = fileURLToPath(selfUrl);
   } catch {
     return false;
   }
+  const resolved = path.resolve(argv1);
+  const candidates = [resolved];
+  if (!path.extname(resolved)) candidates.push(`${resolved}.js`);
+  for (const c of [...candidates]) {
+    const real = realpathOrNull(c);
+    if (real) candidates.push(real);
+  }
+  const selves = [self, realpathOrNull(self)].filter(Boolean);
+  // Windows paths are case-insensitive (e.g. a lowercase drive letter).
+  const norm = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+  return candidates.some((c) => selves.some((s) => norm(c) === norm(s)));
 }
 
 if (isEntryPoint()) {
   main();
 }
 
-export { buildProgram, main, isEntryPoint };
+export { buildProgram, main, handleError, isEntryPoint };

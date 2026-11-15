@@ -18,7 +18,8 @@ export default [
       ecmaVersion: 2024,
       sourceType: 'module',
       globals: {
-        ...globals.node,
+        // nodeBuiltin, not node: flags CommonJS leftovers (require, module, __dirname) in ESM files.
+        ...globals.nodeBuiltin,
       },
     },
     rules: {

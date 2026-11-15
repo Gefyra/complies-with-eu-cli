@@ -16,7 +16,7 @@ By participating you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md). 
 
 Prerequisites:
 
-- Node.js **22.13 or newer**
+- Node.js **22.22.2 or a newer 22.x, 24.15.0 or a newer 24.x, or 26+** (`engines.node`: `^22.22.2 || ^24.15.0 || >=26.0.0`)
 - Java **21 or newer** (the pinned fhir-pkg-tool is built for Java 21)
 - Git
 

@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-d32e22"></a>
   <a href="https://www.npmjs.com/package/@gefyra/complies-with-eu"><img alt="npm" src="https://img.shields.io/npm/v/@gefyra/complies-with-eu?color=d32e22"></a>
   <a href="https://github.com/Gefyra/complies-with-eu-cli/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Gefyra/complies-with-eu-cli/ci.yml?branch=main&label=CI"></a>
-  <img alt="Node.js >= 22.13" src="https://img.shields.io/badge/node-%3E%3D22.13-d32e22">
+  <img alt="Node.js ^22.22.2 || ^24.15.0 || >=26" src="https://img.shields.io/badge/node-%5E22.22.2%20%7C%7C%20%5E24.15.0%20%7C%7C%20%3E%3D26-d32e22">
 </p>
 
 ---
@@ -71,7 +71,7 @@ You get a per-EU-profile verdict (fulfilled / not fulfilled) and a report that e
 
 | Requirement | Details |
 |-------------|---------|
-| Node.js | 22.13 or newer |
+| Node.js | 22.22.2 or a newer 22.x, 24.15.0 or a newer 24.x, or 26 and later (the range supported by inquirer 14; odd-numbered releases such as 23 and 25 are not supported) |
 | Java | **21 or newer** on `PATH` or via `JAVA_HOME` (for example [Eclipse Temurin](https://adoptium.net)). The HL7 validator needs Java 17, but the pinned `fhir-pkg-tool` is built for Java 21. |
 | Disk | About 2 GB free: roughly 330 MB for the tools in `~/.complies-with-eu` and 1.5 GB or more for the FHIR package cache (`~/.fhir/packages`), which keeps growing with every package you validate |
 | Memory | 2 to 4 GB RAM for the validator JVM |
@@ -472,6 +472,7 @@ A profile that could not be validated has `"error": "<message>"` and `"pass": fa
 | `0` | Success, **also when profiles are non-compliant**, unless `--fail-on-noncompliant` is set |
 | `1` | At least one selected EU profile is not fulfilled (only with `--fail-on-noncompliant`) |
 | `2` | Usage or operational error: invalid arguments, Java missing, not initialised, package or profile not found, validator crash. In batch mode with `--fail-on-noncompliant`, also when a profile could not be validated. |
+| `130` | Cancelled: Ctrl+C was pressed in an interactive prompt (the CLI prints `Cancelled.` on stderr) |
 
 The default of `0` for non-compliant results is deliberate and stable, so existing pipelines that read the JSON keep working. Add `--fail-on-noncompliant` to make a CI job fail on non-compliance.
 

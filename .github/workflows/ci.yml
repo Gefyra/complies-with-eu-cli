@@ -21,8 +21,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        # 22.13 is the minimum version (engines.node); 22 and 24 pick the latest release.
-        node: ['22.13', 22, 24]
+        # 22.22.2 and 24.15.0 are the lowest supported versions of each line
+        # (engines.node: ^22.22.2 || ^24.15.0 || >=26.0.0); 22 and 24 pick the latest release.
+        node: ['22.22.2', 22, '24.15.0', 24]
     defaults:
       run:
         shell: bash

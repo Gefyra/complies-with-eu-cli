@@ -17,8 +17,14 @@ import { readInstalledVersionsSync, resolveToolSpec } from '../lib/toolDownloade
 import { resolvePackageDir, resolvePackageId, getFhirPackagesDir } from '../lib/fhirPkgTool.js';
 import { EXIT, setExitCode } from '../lib/errors.js';
 
-/** Minimum Node.js version, kept in sync with "engines.node" in package.json. */
-const MIN_NODE_VERSION = '22.13.0';
+/**
+ * Supported Node.js versions, identical to "engines.node" in package.json.
+ * It follows the engines range of inquirer 14 and the @inquirer/* packages.
+ */
+const NODE_ENGINES = '^22.22.2 || ^24.15.0 || >=26.0.0';
+
+/** Lowest supported Node.js version. */
+const MIN_NODE_VERSION = '22.22.2';
 
 /** Compares dotted numeric versions ("22.13.0"); returns <0, 0 or >0. */
 function compareNodeVersions(a, b) {
@@ -31,9 +37,37 @@ function compareNodeVersions(a, b) {
   return 0;
 }
 
-/** True when the given Node.js version satisfies MIN_NODE_VERSION. */
+/**
+ * True when `version` satisfies `range`. Supports the subset of semver ranges
+ * used by engines.node fields: "||" alternatives of space-separated
+ * comparators (^x.y.z, >=, >, <=, <, = or a bare version), including partial
+ * versions such as ">=22".
+ */
+function satisfiesNodeRange(version, range) {
+  const ver = String(version).replace(/^v/, '');
+  return String(range).split('||').some((alt) => {
+    const comparators = alt.trim().split(/\s+/).filter(Boolean);
+    if (comparators.length === 0) return true;
+    return comparators.every((comp) => {
+      const m = /^(\^|>=|<=|>|<|=)?v?(\d+(?:\.\d+){0,2})$/.exec(comp);
+      if (!m) return false;
+      const [, op = '=', base] = m;
+      const cmp = compareNodeVersions(ver, base);
+      switch (op) {
+        case '^': return cmp >= 0 && parseInt(ver, 10) === parseInt(base, 10);
+        case '>=': return cmp >= 0;
+        case '>': return cmp > 0;
+        case '<=': return cmp <= 0;
+        case '<': return cmp < 0;
+        default: return cmp === 0;
+      }
+    });
+  });
+}
+
+/** True when the given Node.js version satisfies NODE_ENGINES. */
 function isSupportedNodeVersion(version = process.versions.node) {
-  return compareNodeVersions(version, MIN_NODE_VERSION) >= 0;
+  return satisfiesNodeRange(version, NODE_ENGINES);
 }
 
 /**
@@ -81,7 +115,7 @@ async function collectDiagnostics() {
   }
 
   const problems = [];
-  if (!nodeOk) problems.push(`Node.js ${process.versions.node} is too old (need ${MIN_NODE_VERSION} or newer)`);
+  if (!nodeOk) problems.push(`Node.js ${process.versions.node} is not supported (need ${NODE_ENGINES})`);
   if (!java.found) problems.push(`Java not found (${java.error})`);
   else if (java.major !== null && java.major < minJava) problems.push(`Java ${java.major} is too old (need ${minJava}+)`);
   for (const t of tools) if (!t.present) problems.push(`${t.fileName} missing`);
@@ -148,4 +182,4 @@ async function runDoctor(options = {}) {
   if (!d.ok) setExitCode(EXIT.ERROR);
 }
 
-export { runDoctor, collectDiagnostics, isSupportedNodeVersion, MIN_NODE_VERSION };
+export { runDoctor, collectDiagnostics, isSupportedNodeVersion, satisfiesNodeRange, NODE_ENGINES, MIN_NODE_VERSION };

@@ -5,6 +5,8 @@ const EXIT = Object.freeze({
   NON_COMPLIANT: 1,
   // Usage or operational error (Java missing, package not found, validator crash, ...).
   ERROR: 2,
+  // The user cancelled an interactive prompt with Ctrl+C (128 + SIGINT, as for a shell).
+  CANCELLED: 130,
 });
 
 /**
