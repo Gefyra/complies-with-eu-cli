@@ -1,6 +1,14 @@
 import path from 'node:path';
 import fs from 'fs-extra';
-import { findConstraintPaths } from './constraintCheck.js';
+import {
+  SEVERITIES,
+  shortName,
+  isoDate,
+  parseSliceIssue,
+  buildDetailItems,
+  buildReportModel,
+  buildPackageModel,
+} from './reportModel.js';
 
 /**
  * Escapes text for use in Markdown/HTML outside code spans (reports are rendered
@@ -42,51 +50,34 @@ function exampleErrorCount(parsed) {
   return exampleHasNoResult(parsed) ? Math.max(errors, 1) : errors;
 }
 
-/**
- * Extracts the last path segment of a canonical URL for display.
- * e.g. "http://hl7.eu/fhir/base/StructureDefinition/patient-eu-core" → "patient-eu-core"
- */
-function shortName(canonical) {
-  return canonical.split('/').pop();
+/** Markdown of a structured detail issue (see reportModel.parseSliceIssue). */
+function mdIssue(issue) {
+  switch (issue.kind) {
+    case 'cardinality':
+      return `${issue.bound}: is ${mdCode(issue.actual)}, expected ${mdCode(issue.expected)}`;
+    case 'constraint':
+      return `Constraint missing: ${mdCode(issue.expression)}`;
+    case 'slicing':
+      return 'No slicing found, target profile expects slicing';
+    default:
+      return mdText(issue.text);
+  }
 }
 
 /**
- * Turns a raw "slice error: ..." detail line into a table row [path, problem].
- *
- * The validator's "constraint ... missing" message carries no element path. When
- * the claimed EU SD is passed and exactly one of its elements declares that
- * constraint, its path is shown; otherwise the path stays "—".
+ * Turns a raw "slice error: ..." detail line into a Markdown table row [path, problem].
+ * See reportModel.parseSliceIssue; a path that cannot be determined is shown as "—".
  *
  * @param {string} raw
  * @param {object} [euSd] - The claimed EU StructureDefinition (optional)
  */
 function parseSliceDetail(raw, euSd = null) {
-  const text = raw.replace(/^slice error:\s*/i, '').trim();
-
-  const minMaxMatch = text.match(
-    /The (min|max) value of '([^']+)' on the path (\S+) does not comply with the value '([^']+)' from the claimed profile/
-  );
-  if (minMaxMatch) {
-    return [mdCode(minMaxMatch[3]), `${minMaxMatch[1] === 'min' ? 'min' : 'max'}: is ${mdCode(minMaxMatch[2])}, expected ${mdCode(minMaxMatch[4])}`];
-  }
-
-  const constraintMatch = text.match(/The constraint '(.+)' is defined in the claimed profile, but missing/);
-  if (constraintMatch) {
-    const paths = euSd ? findConstraintPaths(euSd, constraintMatch[1]) : [];
-    return [paths.length === 1 ? mdCode(paths[0]) : '—', `Constraint missing: ${mdCode(constraintMatch[1])}`];
-  }
-
-  const slicingMatch = text.match(/Mismatch in slicing at (\S+):/);
-  if (slicingMatch) {
-    return [mdCode(slicingMatch[1]), 'No slicing found, target profile expects slicing'];
-  }
-
-  return ['—', mdText(text)];
+  const { path: p, issue } = parseSliceIssue(raw, euSd);
+  return [p ? mdCode(p) : '—', mdIssue(issue)];
 }
 
 /**
- * Builds the rows of a per-EU-profile details table: identical rows (the
- * validator repeats e.g. the same constraint text for several elements) are
+ * Builds the Markdown rows of a per-EU-profile details table: identical rows are
  * collapsed into one, in first-seen order, with "(reported N×)" appended.
  *
  * @param {string[]} details - Raw detail lines
@@ -94,120 +85,72 @@ function parseSliceDetail(raw, euSd = null) {
  * @returns {Array<[string, string]>} [path, problem] rows
  */
 function buildDetailRows(details, euSd = null) {
-  const rows = new Map(); // "path\0problem" → { path, problem, count }
-  for (const d of details) {
-    const [p, problem] = parseSliceDetail(d, euSd);
-    const key = `${p}\u0000${problem}`;
-    const row = rows.get(key);
-    if (row) row.count++;
-    else rows.set(key, { path: p, problem, count: 1 });
-  }
-  return [...rows.values()].map(({ path: p, problem, count }) =>
-    [p, count > 1 ? `${problem} (reported ${count}×)` : problem]);
+  return mdDetailRows(buildDetailItems(details, euSd));
 }
 
+/** Markdown rows of detail items from the report model. */
+function mdDetailRows(items) {
+  return items.map(({ path: p, issue, count }) => {
+    const problem = mdIssue(issue);
+    return [p ? mdCode(p) : '—', count > 1 ? `${problem} (reported ${count}×)` : problem];
+  });
+}
+
+const OBLIGATION_PROBLEM_MD = {
+  notFound: 'Element not found in profile',
+  maxZero: '`max: 0` — element prohibited',
+  missingMustSupport: 'MustSupport missing',
+};
+
+const SEVERITY_LABELS = { fatal: 'Fatal', error: 'Errors', warning: 'Warnings', information: 'Information' };
+
 /**
- * Generates a Markdown compliance report from parsed validator console output.
+ * Renders the Markdown of a single-profile compliance report from the report model.
  *
- * @param {object}   opts
- * @param {string}   opts.canonical      - The canonical URL of the validated profile
- * @param {string}   opts.packageSpec    - e.g. "de.gematik.isik@5.1.1"
- * @param {Array}    opts.euProfiles     - EU profiles: [{ url, version }] (optional; falls back to euCanonicals)
- * @param {string[]} opts.euCanonicals   - EU profile canonicals added as compliesWithProfile
- * @param {object}   opts.parsed         - Result of parseValidatorOutput: { summary, issues }
- * @param {string}   opts.reportPath     - Destination Markdown file path
- * @param {Map}      [opts.obligationViolationsByEuCanonical] - Map of euCanonical → violation[]
- * @param {Map}      [opts.filteredNonCompliantMap] - Pre-filtered nonCompliantMap (compliesWithProfile errors)
- * @param {Array}    [opts.autoSatisfiedConstraints] - Auto-resolved constraints: [{ euCanonical, expression, basePath, matchedChild }]
- * @param {Map}      [opts.euSdByCanonical] - Map of EU canonical (without version) → EU SD, used to recover element paths of missing constraints
+ * @param {object} model - Result of reportModel.buildReportModel
+ * @returns {string}
  */
-async function generateReport(opts) {
-  const { canonical, packageSpec, euCanonicals, parsed, reportPath } = opts;
-  // Build version lookup: url → version string (may be null/undefined)
-  const euVersionMap = new Map(
-    (opts.euProfiles || euCanonicals.map(u => ({ url: u, version: null })))
-      .map(p => [p.url, p.version || null])
-  );
-  /** Returns the display string for a canonical with optional pipe-version */
-  const withVersion = (url) => {
-    const v = euVersionMap.get(url);
-    return v ? `${url}|${v}` : url;
-  };
-  const { issues } = parsed;
-  const euSdByCanonical = opts.euSdByCanonical ?? new Map();
-
-  // Split compliesWithProfile errors from everything else
-  const cwpErrors = issues.filter(i => i.msgId === 'SD_EXTENSION_COMPLIES_WITH_ERROR');
-  const otherIssues = issues.filter(i => i.msgId !== 'SD_EXTENSION_COMPLIES_WITH_ERROR');
-
-  // Build map: claimedCanonical → detail lines
-  // Use pre-filtered map if provided (constraint check already applied)
-  let nonCompliant;
-  if (opts.filteredNonCompliantMap) {
-    nonCompliant = opts.filteredNonCompliantMap;
-  } else {
-    nonCompliant = new Map();
-    for (const issue of cwpErrors) {
-      const m = issue.message.match(/claimed profile '([^']+)'/);
-      if (m) nonCompliant.set(m[1], issue.details);
-    }
-  }
-
-  // Count other issues by severity
-  const bySeverity = { fatal: [], error: [], warning: [], information: [] };
-  for (const issue of otherIssues) {
-    const sev = issue.severity || 'information';
-    if (bySeverity[sev]) bySeverity[sev].push(issue);
-  }
-
+function renderMarkdownReport(model) {
+  const { summary } = model;
   const lines = [];
 
   // ── Header ────────────────────────────────────────────────────────────────
-  lines.push(`# Compliance Report: ${mdText(shortName(canonical))}`);
+  lines.push(`# Compliance Report: ${mdText(model.title)}`);
   lines.push('');
-  lines.push(`**Profile:** ${mdCode(canonical)}`);
-  lines.push(`**Package:** ${mdCode(packageSpec)} | **Date:** ${new Date().toISOString().slice(0, 10)}`);
+  lines.push(`**Profile:** ${mdCode(model.canonical)}`);
+  lines.push(`**Package:** ${mdCode(model.packageSpec)} | **Date:** ${model.date}`);
   lines.push('');
 
   // ── Section 1: Status overview ────────────────────────────────────────────
-  const oblViolationsEarly = opts.obligationViolationsByEuCanonical ?? new Map();
-  const isNonCompliant = (c) => nonCompliant.has(c) || oblViolationsEarly.has(c);
-  const compliantCount = euCanonicals.filter(c => !isNonCompliant(c)).length;
-  const nonCompliantCount = euCanonicals.filter(c => isNonCompliant(c)).length;
-  const overallIcon = nonCompliantCount === 0 ? '✅' : '❌';
-
-  lines.push(`## ${overallIcon} compliesWithProfile — Overview`);
+  lines.push(`## ${summary.nonCompliant === 0 ? '✅' : '❌'} compliesWithProfile — Overview`);
   lines.push('');
-  lines.push(`**${compliantCount} of ${euCanonicals.length}** checked EU profiles are fulfilled.`);
+  lines.push(`**${summary.compliant} of ${summary.total}** checked EU profiles are fulfilled.`);
   lines.push('');
   lines.push('| Status | EU Profile |');
   lines.push('|:------:|------------|');
-  for (const c of euCanonicals) {
-    const icon = isNonCompliant(c) ? '❌' : '✅';
-    lines.push(`| ${icon} | ${mdCell(mdCode(withVersion(c)))} |`);
+  for (const p of model.euProfiles) {
+    lines.push(`| ${p.pass ? '✅' : '❌'} | ${mdCell(mdCode(p.display))} |`);
   }
   lines.push('');
 
   // ── Section 2: Reasons per non-compliant profile ─────────────────────────
-  const failedCanonicals = euCanonicals.filter(c => nonCompliant.has(c));
-  if (failedCanonicals.length > 0) {
+  const failed = model.euProfiles.filter(p => p.compliesWithFailed);
+  if (failed.length > 0) {
     lines.push('## Non-Compliant Profiles — Details');
     lines.push('');
 
-    for (const c of failedCanonicals) {
-      const details = nonCompliant.get(c) ?? [];
-      lines.push(`### ❌ ${mdText(shortName(c))}`);
+    for (const p of failed) {
+      lines.push(`### ❌ ${mdText(p.name)}`);
       lines.push('');
-      lines.push(mdCode(withVersion(c)));
+      lines.push(mdCode(p.display));
       lines.push('');
 
-      if (details.length === 0) {
+      if (p.details.length === 0) {
         lines.push('_No details available._');
       } else {
         lines.push('| Path | Issue |');
         lines.push('|------|-------|');
-        const euSd = euSdByCanonical.get(c.split('|')[0]) ?? null;
-        for (const [rowPath, problem] of buildDetailRows(details, euSd)) {
+        for (const [rowPath, problem] of mdDetailRows(p.details)) {
           lines.push(`| ${mdCell(rowPath)} | ${mdCell(problem)} |`);
         }
       }
@@ -216,9 +159,7 @@ async function generateReport(opts) {
   }
 
   // ── Section 3: Obligation / MustSupport Violations ────────────────────────
-  const oblViolations = oblViolationsEarly;
-  if (oblViolations.size > 0) {
-    const totalViol = [...oblViolations.values()].reduce((s, v) => s + v.length, 0);
+  if (model.obligations.length > 0) {
     lines.push(`## ⚠️ Obligation Check (SHALL:able-to-populate)`);
     lines.push('');
     lines.push(
@@ -228,38 +169,29 @@ async function generateReport(opts) {
       `and have a max cardinality > 0.`
     );
     lines.push('');
-    lines.push(`**${totalViol} violation(s)** found across ${oblViolations.size} EU profile(s).`);
+    lines.push(`**${summary.obligationViolations} violation(s)** found across ${model.obligations.length} EU profile(s).`);
     lines.push('');
 
-    for (const [euCan, violations] of oblViolations) {
-      lines.push(`### 📋 ${mdText(shortName(euCan))}`);
+    for (const o of model.obligations) {
+      lines.push(`### 📋 ${mdText(o.name)}`);
       lines.push('');
-      lines.push(mdCode(euCan));
+      lines.push(mdCode(o.euCanonical));
       lines.push('');
-      const inputLabel = mdCell(mdText(shortName(canonical)));
+      const inputLabel = mdCell(mdText(model.title));
       lines.push(`| EU Element | Obligation | Issue | Cardinality (${inputLabel}) | MustSupport (${inputLabel}) |`);
       lines.push('|------------|-----------|-------|:-----------:|:-------------------:|');
-      for (const v of violations) {
-        const problems = [];
-        if (v.matchType === 'notFound') {
-          problems.push('Element not found in profile');
-        } else {
-          if (v.maxIsZero) problems.push('`max: 0` — element prohibited');
-          if (v.missingMustSupport) problems.push('MustSupport missing');
-        }
-        const maxCell = v.matchType === 'notFound' ? '—' : (v.inputCardinality ?? '—');
-        const msCell = v.matchType === 'notFound' ? '—' : (v.inputMustSupport ? '✅' : '❌');
-        lines.push(`| ${mdCell(mdCode(v.euElementId))} | ${mdCell(mdCode(v.obligationCode))} | ${mdCell(problems.join(', '))} | ${mdCell(maxCell)} | ${msCell} |`);
+      for (const v of o.violations) {
+        const problems = v.problems.map(k => OBLIGATION_PROBLEM_MD[k]).join(', ');
+        const maxCell = v.notFound ? '—' : (v.cardinality ?? '—');
+        const msCell = v.notFound ? '—' : (v.mustSupport ? '✅' : '❌');
+        lines.push(`| ${mdCell(mdCode(v.euElementId))} | ${mdCell(mdCode(v.obligationCode))} | ${mdCell(problems)} | ${mdCell(maxCell)} | ${msCell} |`);
       }
       lines.push('');
     }
   }
 
   // ── Section 4: Automatically resolved constraints ────────────────────────
-  const autoResolved = opts.autoSatisfiedConstraints ?? [];
-  const autoSatisfied = autoResolved.filter(i => i.kind !== 'type-slice');
-  const typeSlices = autoResolved.filter(i => i.kind === 'type-slice');
-  if (typeSlices.length > 0) {
+  if (model.typeSlices.length > 0) {
     lines.push('## ℹ️ Optional EU type slices not allowed in this profile');
     lines.push('');
     lines.push(
@@ -270,14 +202,14 @@ async function generateReport(opts) {
     lines.push('');
     lines.push('| EU Profile | EU slice | Type | Details |');
     lines.push('|-----------|----------|------|---------|');
-    for (const item of typeSlices) {
+    for (const item of model.typeSlices) {
       lines.push(
-        `| ${mdCell(mdText(shortName(item.euCanonical)))} | ${mdCell(mdCode(item.basePath))} | ${mdCell(mdCode(item.type))} | ${mdCell(mdText(item.matchedChild))} |`
+        `| ${mdCell(mdText(item.name))} | ${mdCell(mdCode(item.basePath))} | ${mdCell(mdCode(item.type))} | ${mdCell(mdText(item.matchedChild))} |`
       );
     }
     lines.push('');
   }
-  if (autoSatisfied.length > 0) {
+  if (model.autoResolved.length > 0) {
     lines.push('## ℹ️ Automatically resolved constraints');
     lines.push('');
     lines.push(
@@ -288,20 +220,20 @@ async function generateReport(opts) {
     lines.push('');
     lines.push('| EU Profile | Element | Constraint | Fulfilled by |');
     lines.push('|-----------|---------|------------|--------------|');
-    for (const item of autoSatisfied) {
+    for (const item of model.autoResolved) {
       lines.push(
-        `| ${mdCell(mdText(shortName(item.euCanonical)))} | ${mdCell(mdCode(item.basePath))} | ${mdCell(mdCode(item.expression))} | ${mdCell(mdText(item.matchedChild))} |`
+        `| ${mdCell(mdText(item.name))} | ${mdCell(mdCode(item.basePath))} | ${mdCell(mdCode(item.expression))} | ${mdCell(mdText(item.matchedChild))} |`
       );
     }
     lines.push('');
   }
 
   // ── Section 5: Other validation results (collapsible) ────────────────────
-  if (otherIssues.length > 0) {
-    const severityLabels = { fatal: 'Fatal', error: 'Errors', warning: 'Warnings', information: 'Information' };
-    const otherSummaryParts = ['fatal', 'error', 'warning', 'information']
+  const { bySeverity } = model.otherIssues;
+  if (model.otherIssues.total > 0) {
+    const otherSummaryParts = SEVERITIES
       .filter(s => bySeverity[s].length > 0)
-      .map(s => `${bySeverity[s].length} ${severityLabels[s]}`);
+      .map(s => `${bySeverity[s].length} ${SEVERITY_LABELS[s]}`);
 
     lines.push('## Other Validation Results');
     lines.push('');
@@ -309,11 +241,11 @@ async function generateReport(opts) {
     lines.push(`<summary>Not compliesWithProfile-specific: ${otherSummaryParts.join(', ')} — expand</summary>`);
     lines.push('');
 
-    for (const sev of ['fatal', 'error', 'warning', 'information']) {
+    for (const sev of SEVERITIES) {
       const sevIssues = bySeverity[sev];
       if (sevIssues.length === 0) continue;
 
-      lines.push(`### ${severityLabels[sev]}`);
+      lines.push(`### ${SEVERITY_LABELS[sev]}`);
       lines.push('');
 
       for (const issue of sevIssues) {
@@ -333,8 +265,50 @@ async function generateReport(opts) {
     lines.push('');
   }
 
-  await fs.outputFile(reportPath, lines.join('\n'), 'utf8');
+  return lines.join('\n');
 }
+
+/**
+ * Generates a Markdown compliance report from parsed validator console output.
+ * Accepts the options of reportModel.buildReportModel plus `reportPath`.
+ *
+ * @param {object} opts
+ * @param {string} opts.reportPath - Destination Markdown file path
+ * @returns {Promise<object>} The report model (reusable by other renderers)
+ */
+async function generateReport(opts) {
+  const model = buildReportModel(opts);
+  await fs.outputFile(opts.reportPath, renderMarkdownReport(model), 'utf8');
+  return model;
+}
+
+/**
+ * Renders the Markdown of a package report from reportModel.buildPackageModel.
+ *
+ * @param {object} model
+ * @returns {string}
+ */
+function renderPackageMarkdown(model) {
+  const { summary } = model;
+  const lines = [
+    `# Package Compliance Report: ${mdText(model.packageSpec)}`,
+    '',
+    `**Date:** ${model.date}`,
+    `**Profiles:** ${summary.total} total, ${summary.compliant} compliant, ${summary.nonCompliant} non-compliant, ${summary.errored} with errors`,
+    '',
+    '## Profiles',
+    '',
+    '| Profile | Status | Report |',
+    '|---------|--------|--------|',
+  ];
+  for (const p of model.profiles) {
+    const status = p.error ? '⚠️ error' : (p.pass ? '✅' : '❌');
+    lines.push(`| ${mdCell(mdText(p.name))} | ${status} | [Report](${p.slug}-report.md) |`);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
 
 /**
  * Generates a single combined Markdown validation report for all example instances.
@@ -347,14 +321,14 @@ async function generateReport(opts) {
  * @param {string}    opts.reportPath     - Destination Markdown file path
  */
 async function generateExampleReport({ canonical, packageSpec, euCanonicals, results, reportPath }) {
-  const severityLabels = { fatal: 'Fatal', error: 'Errors', warning: 'Warnings', information: 'Information' };
+  const severityLabels = SEVERITY_LABELS;
   const lines = [];
 
   // ── Header ────────────────────────────────────────────────────────────────
   lines.push(`# Example Validation Report: ${mdText(shortName(canonical))}`);
   lines.push('');
   lines.push(`**Profile:** ${mdCode(canonical)}`);
-  lines.push(`**Package:** ${mdCode(packageSpec)} | **Date:** ${new Date().toISOString().slice(0, 10)}`);
+  lines.push(`**Package:** ${mdCode(packageSpec)} | **Date:** ${isoDate()}`);
   lines.push('');
 
   // ── meta.profile Claims ───────────────────────────────────────────────────
@@ -485,4 +459,8 @@ export {
   mdCell,
   mdCode,
   exampleErrorCount,
+  renderMarkdownReport,
+  renderPackageMarkdown,
+  buildReportModel,
+  buildPackageModel,
 };
