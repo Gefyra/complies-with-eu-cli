@@ -19,7 +19,7 @@ const { checkObligations } = require('./obligationCheck');
 const { evaluateExistsOrConstraints, loadEuSds } = require('./constraintCheck');
 const { readInstalledVersionsSync } = require('./toolDownloader');
 
-const stderrLog = (...args) => process.stderr.write(args.join(' ') + '\n');
+const stderrLog = require('./output').makeProgressLogger();
 
 /**
  * Parses "packageName[@version]" (or "packageName#version") into { packageName, version }.
@@ -186,9 +186,10 @@ async function postProcessProfile({
   // Evaluate exists()-or constraints
   let filteredNonCompliantMap;
   let autoSatisfiedConstraints;
+  let euSdByCanonical = new Map();
   try {
     const rawNonCompliantMap = collectNonCompliant(parsed.issues);
-    const euSdByCanonical = await loadEuSds(euPackageDirs, euCanonicals);
+    euSdByCanonical = await loadEuSds(euPackageDirs, euCanonicals);
     ({ filteredMap: filteredNonCompliantMap, satisfied: autoSatisfiedConstraints } =
       evaluateExistsOrConstraints({ inputSd: profile, euSdByCanonical, nonCompliantMap: rawNonCompliantMap }));
   } catch {
@@ -210,6 +211,7 @@ async function postProcessProfile({
     obligationViolationsByEuCanonical,
     filteredNonCompliantMap,
     autoSatisfiedConstraints,
+    euSdByCanonical,
   });
 
   // Derive compliance

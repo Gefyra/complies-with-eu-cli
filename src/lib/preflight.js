@@ -13,7 +13,7 @@ const { ensureJava, requiredJavaMajor } = require('./javaCheck');
 const { resolvePackageDir, packageHasSnapshots, downloadFhirPackage } = require('./fhirPkgTool');
 const { CliError } = require('./errors');
 
-const stderrLog = (...args) => process.stderr.write(args.join(' ') + '\n');
+const stderrLog = require('./output').makeProgressLogger();
 
 /**
  * Lists what `init` should have installed but is missing (pure-ish; no Java needed).

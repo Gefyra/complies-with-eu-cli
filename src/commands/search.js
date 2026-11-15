@@ -8,6 +8,7 @@ const { loadAllSelectionCaches, setWorkdir } = require('../lib/config');
 const { downloadFhirPackage, resolvePackageDir } = require('../lib/fhirPkgTool');
 const { ensureReady, resolveEuPackageDirs } = require('../lib/preflight');
 const { CliError } = require('../lib/errors');
+const { makeProgressLogger } = require('../lib/output');
 const { findAllProfilesInPackage, findEuProfilesByType } = require('../lib/profileUtils');
 const { runValidate } = require('./validate');
 const { resolveCanonicalOnSimplifier } = require('../lib/simplifierResolve');
@@ -30,9 +31,12 @@ function validateOptions(options, extra = {}) {
   };
 }
 
-/** Progress output; stderr with --json so stdout carries only the JSON result. */
-function makeLog(options) {
-  return options.json ? (...a) => process.stderr.write(a.join(' ') + '\n') : (...a) => console.log(...a);
+/**
+ * Progress output: always stderr, the same stream as the ora spinners, so lines
+ * keep their order (stdout carries only the JSON result with --json).
+ */
+function makeLog() {
+  return makeProgressLogger();
 }
 
 /** Prompts render on stderr with --json so stdout carries only the JSON result. */

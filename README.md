@@ -137,6 +137,8 @@ Done!
   Report: ~/.complies-with-eu/workdir/hl7_org_fhir_uv_ips_StructureDefinition_Patient-uv-ips-report.md
 ```
 
+This final result is written to stdout. All progress output (status lines, spinners, the list of EU profiles found) goes to stderr, so it keeps its order when the output is redirected or collected by CI or Docker. With `--json`, stdout carries only the JSON document and the final result goes to stderr as well.
+
 Open the Markdown report to see why a profile is not fulfilled (see [Reading the results](#reading-the-results)).
 
 A second example with a German package (gematik ISiK):
@@ -376,7 +378,7 @@ Deletes everything in the workdir except Markdown reports (`*-report.md`) and `m
 | Section | Content |
 |---------|---------|
 | **compliesWithProfile — Overview** | How many of the checked EU profiles are fulfilled, with a ✅ / ❌ row per EU profile. An EU profile counts as not fulfilled if the validator rejects the claim **or** the obligation check finds a violation. |
-| **Non-Compliant Profiles — Details** | Per failed EU profile, a table of element paths and the issue the validator reported (missing constraints, cardinality conflicts, slicing problems). |
+| **Non-Compliant Profiles — Details** | Per failed EU profile, a table of element paths and the issue the validator reported (missing constraints, cardinality conflicts, slicing problems). Identical rows are shown once with "(reported N×)". The validator names no element for a missing constraint; the path is taken from the EU profile when exactly one of its elements declares the constraint, otherwise it is shown as "—". |
 | **Obligation Check (SHALL:able-to-populate)** | The HL7 validator does not evaluate obligations or MustSupport. For every element that an EU profile's differential marks `SHALL:able-to-populate`, this check looks at your profile's snapshot and reports the element if it is not found, has `max: 0`, or is not MustSupport. |
 | **Automatically resolved constraints** | EU `.exists() or …` constraints that your profile does not declare, but that are guaranteed by its minimum cardinalities (unsliced elements with `min ≥ 1`). They are excluded from the verdict. |
 | **Other Validation Results** | Collapsible list of all other validator messages (fatal, errors, warnings, information) that are not about `compliesWithProfile`. |

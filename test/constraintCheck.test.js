@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const {
   parseExistsOrExpression,
   findConstraintBasePath,
+  findConstraintPaths,
   isSatisfiedInInputSnapshot,
   isIgnoredSlicingDetail,
   evaluateExistsOrConstraints,
@@ -211,4 +212,23 @@ test('evaluateExistsOrConstraints: resolves satisfied constraints, keeps the res
   assert.equal(filteredMap.get('http://unknown/eu').length, 1);
   // Only ignored details: profile counts as compliant
   assert.equal(filteredMap.has('http://only-ignored/eu'), false);
+});
+
+test('findConstraintPaths: distinct element paths declaring an expression', () => {
+  const sd = {
+    snapshot: {
+      element: [
+        { path: 'Patient.name', constraint: [{ expression: 'x' }] },
+        { path: 'Patient.name', id: 'Patient.name:official', constraint: [{ expression: 'x' }] },
+        { path: 'Patient.contact.name', constraint: [{ expression: 'x' }, { expression: 'y' }] },
+      ],
+    },
+    differential: { element: [{ path: 'Patient.other', constraint: [{ expression: 'z' }] }] },
+  };
+  assert.deepEqual(findConstraintPaths(sd, 'x'), ['Patient.name', 'Patient.contact.name']);
+  assert.deepEqual(findConstraintPaths(sd, 'y'), ['Patient.contact.name']);
+  // snapshot present: the differential is not consulted
+  assert.deepEqual(findConstraintPaths(sd, 'z'), []);
+  assert.deepEqual(findConstraintPaths({ differential: sd.differential }, 'z'), ['Patient.other']);
+  assert.deepEqual(findConstraintPaths(null, 'x'), []);
 });
