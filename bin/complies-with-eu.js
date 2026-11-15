@@ -19,6 +19,7 @@ Getting started:
        http://hl7.org/fhir/uv/ips/StructureDefinition/Patient-uv-ips --all-counterparts
   3. Open the Markdown report printed at the end of the run.
   Check your setup with: complies-with-eu doctor
+  Short alias: every command also works as "cwe", e.g. cwe doctor
 
 Reports:
   Written to <workdir>/<profile>-report.md (package mode: <workdir>/<package>/).

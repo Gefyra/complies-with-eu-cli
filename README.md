@@ -88,6 +88,8 @@ npm install -g @gefyra/complies-with-eu
 complies-with-eu --help
 ```
 
+The package installs two equivalent commands: `complies-with-eu` and the short alias `cwe` (for example `cwe validate …`, `cwe doctor`). The examples in this README use the long name.
+
 **Without installing (npx)**
 
 ```bash

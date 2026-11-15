@@ -27,7 +27,8 @@
   "author": "Gefyra GmbH <js@gefyra.de>",
   "type": "module",
   "bin": {
-    "complies-with-eu": "bin/complies-with-eu.js"
+    "complies-with-eu": "bin/complies-with-eu.js",
+    "cwe": "bin/complies-with-eu.js"
   },
   "files": [
     "bin/",

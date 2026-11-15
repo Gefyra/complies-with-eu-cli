@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Short command alias `cwe`: the package now installs `cwe` next to `complies-with-eu`; both run the same CLI (for example `cwe validate …`, `cwe doctor`).
+
 ### Changed
 
 - **Breaking:** Node.js 22.22.2 or a newer 22.x, 24.15.0 or a newer 24.x, or Node.js 26 and later is required (`engines.node` is `^22.22.2 || ^24.15.0 || >=26.0.0`, the range that inquirer 14 and its `@inquirer/*` packages support). Node.js 20, 23 and 25 are no longer supported. `doctor` reports an unsupported Node.js version as a problem.

@@ -24,6 +24,7 @@ test('package is ESM and engines.node matches doctor', () => {
   assert.equal(pkg.type, 'module');
   assert.equal(pkg.engines.node, NODE_ENGINES);
   assert.equal(pkg.bin['complies-with-eu'], 'bin/complies-with-eu.js');
+  assert.equal(pkg.bin.cwe, 'bin/complies-with-eu.js', 'short alias cwe points to the same entry point');
   assert.ok(isSupportedNodeVersion(MIN_NODE_VERSION), 'MIN_NODE_VERSION is supported');
 });
 
