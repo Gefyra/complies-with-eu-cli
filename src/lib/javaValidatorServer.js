@@ -1,16 +1,14 @@
-'use strict';
-
-const net = require('net');
-const path = require('path');
-const { spawn } = require('child_process');
-const fs = require('fs-extra');
-const axios = require('axios');
-const chalk = require('chalk');
-const { getValidatorJar, loadValidatorParams } = require('./config');
-const { getJavaCommand } = require('./javaCheck');
-const { track } = require('./processRegistry');
-const { mapSettled } = require('./javaValidator');
-const { createOutputHandler, createProgress, formatValidatorError, formatValidatorErrorShort, createValidatorError, tailLines } = require('./validatorOutput');
+import net from 'node:net';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import fs from 'fs-extra';
+import axios from 'axios';
+import chalk from 'chalk';
+import { getValidatorJar, loadValidatorParams } from './config.js';
+import { getJavaCommand } from './javaCheck.js';
+import { track } from './processRegistry.js';
+import { mapSettled } from './javaValidator.js';
+import { createOutputHandler, createProgress, formatValidatorError, formatValidatorErrorShort, createValidatorError, tailLines } from './validatorOutput.js';
 
 const DEFAULT_PORT = 7272;
 const READY_POLL_INTERVAL_MS = 2500;
@@ -446,7 +444,7 @@ async function validateBatchViaServer(port, dirPath, onlyFiles = null) {
   return { rawOutput: '', results };
 }
 
-module.exports = {
+export {
   DEFAULT_PORT,
   isServerReady,
   findFreePort,

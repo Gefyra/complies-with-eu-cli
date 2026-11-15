@@ -1,9 +1,7 @@
-'use strict';
-
-const path = require('path');
-const fs = require('fs-extra');
-const chalk = require('chalk');
-const { getWorkdir, setWorkdir } = require('../lib/config');
+import path from 'node:path';
+import fs from 'fs-extra';
+import chalk from 'chalk';
+import { getWorkdir, setWorkdir } from '../lib/config.js';
 
 /** Files that `clean` keeps: Markdown reports and package-mode mapping.json. */
 function isKeptFile(filePath) {
@@ -94,4 +92,4 @@ async function runClean(options = {}) {
   console.log(chalk.bold.green('\nDone!\n'));
 }
 
-module.exports = { runClean, isKeptFile };
+export { runClean, isKeptFile };

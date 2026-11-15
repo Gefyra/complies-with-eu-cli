@@ -1,18 +1,16 @@
-'use strict';
-
-const path = require('path');
-const { spawn } = require('child_process');
-const fs = require('fs-extra');
-const chalk = require('chalk');
-const { getValidatorJar, loadValidatorParams } = require('./config');
-const { getJavaCommand } = require('./javaCheck');
-const { track } = require('./processRegistry');
-const {
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import fs from 'fs-extra';
+import chalk from 'chalk';
+import { getValidatorJar, loadValidatorParams } from './config.js';
+import { getJavaCommand } from './javaCheck.js';
+import { track } from './processRegistry.js';
+import {
   createOutputHandler,
   createProgress,
   extractResultInfo,
   createValidatorError,
-} = require('./validatorOutput');
+} from './validatorOutput.js';
 
 /**
  * Runs `fn` over `items` with at most `limit` concurrent calls and returns
@@ -343,7 +341,7 @@ async function runValidatorBatch(dirPath, igIds, opts = false, extraArgs = []) {
   return { rawOutput, results: parseValidatorOutputBatch(rawOutput), logPath };
 }
 
-module.exports = {
+export {
   runValidator,
   runValidatorBatch,
   executeValidator,

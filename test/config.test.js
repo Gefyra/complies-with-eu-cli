@@ -1,14 +1,12 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const os = require('node:os');
+import * as config from '../src/lib/config.js';
 
-const config = require('../src/lib/config');
-
-const FIXTURES = path.join(__dirname, 'fixtures');
+const FIXTURES = path.join(import.meta.dirname, 'fixtures');
 
 test('parseValidatorParams: skips comments/non-flags, splits on first whitespace, drops output flags', () => {
   const raw = fs.readFileSync(path.join(FIXTURES, 'validator-params.md'), 'utf8');

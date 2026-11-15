@@ -1,12 +1,10 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-
-const {
+import {
   mdText,
   mdCell,
   mdCode,
@@ -14,7 +12,7 @@ const {
   buildDetailRows,
   exampleErrorCount,
   generateReport,
-} = require('../src/lib/reportGen');
+} from '../src/lib/reportGen.js';
 
 const ELE1 = 'hasValue() or (children().count() > id.count())';
 const NAME_EXPR = 'family.exists() or given.exists()';

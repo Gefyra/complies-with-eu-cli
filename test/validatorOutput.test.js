@@ -1,13 +1,11 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { EventEmitter } from 'node:events';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { EventEmitter } = require('node:events');
-
-const {
+import {
   detectPhase,
   PHASES,
   extractResultInfo,
@@ -18,13 +16,13 @@ const {
   oneLineError,
   createOutputHandler,
   createProgress,
-} = require('../src/lib/validatorOutput');
-const {
+} from '../src/lib/validatorOutput.js';
+import {
   executeValidator,
   spawnValidator,
   normalizeRunOptions,
   parseValidatorOutput,
-} = require('../src/lib/javaValidator');
+} from '../src/lib/javaValidator.js';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'cwe-vout-'));
 test.after(() => fs.rmSync(TMP, { recursive: true, force: true }));
@@ -114,7 +112,7 @@ test('createOutputHandler: does not mirror output unless verbose; collects every
 test('createOutputHandler: IG packages loaded after the terminology server show "Loading packages" again', () => {
   // Head of a real validator_cli 6.7.4 log (paths anonymised): the terminology
   // server line comes after the core packages, the -ig packages load after it.
-  const real = fs.readFileSync(path.join(__dirname, 'fixtures', 'validator-startup-6.7.4.log'), 'utf8');
+  const real = fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'validator-startup-6.7.4.log'), 'utf8');
   const phases = [];
   const h = createOutputHandler({ onPhase: (p) => phases.push(p) });
   for (let i = 0; i < real.length; i += 53) h.onData(Buffer.from(real.slice(i, i + 53)));

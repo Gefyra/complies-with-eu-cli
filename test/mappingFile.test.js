@@ -1,12 +1,10 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-
-const { loadPackageMapping, savePackageMapping, loadExternalMapping } = require('../src/lib/mappingFile');
+import { loadPackageMapping, savePackageMapping, loadExternalMapping } from '../src/lib/mappingFile.js';
 
 function tmp(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cwe-map-'));

@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Output streams of the CLI.
  *
@@ -41,4 +39,4 @@ function makeResultLogger(options = {}) {
   return options.json ? writerFor(process.stderr) : writerFor(process.stdout);
 }
 
-module.exports = { makeProgressLogger, makeResultLogger, stripColorsForStream };
+export { makeProgressLogger, makeResultLogger, stripColorsForStream };

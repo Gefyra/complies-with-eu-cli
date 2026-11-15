@@ -1,9 +1,7 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-
-const { EXIT, CliError, setExitCode, outcomeExitCode } = require('../src/lib/errors');
+import { EXIT, CliError, setExitCode, outcomeExitCode } from '../src/lib/errors.js';
 
 test('outcomeExitCode: default is always 0 (backward compatible for CI consumers)', () => {
   assert.equal(outcomeExitCode({ failOnNoncompliant: false }), 0);

@@ -1,9 +1,7 @@
-'use strict';
-
-const path = require('path');
-const fs = require('fs-extra');
-const chalk = require('chalk');
-const {
+import path from 'node:path';
+import fs from 'fs-extra';
+import chalk from 'chalk';
+import {
   getPackageInfo,
   getHome,
   getHomeToolsDir,
@@ -13,13 +11,30 @@ const {
   getCacheFile,
   loadEuPackages,
   loadToolsManifest,
-} = require('../lib/config');
-const { detectJava, requiredJavaMajor } = require('../lib/javaCheck');
-const { readInstalledVersionsSync, resolveToolSpec } = require('../lib/toolDownloader');
-const { resolvePackageDir, resolvePackageId, getFhirPackagesDir } = require('../lib/fhirPkgTool');
-const { EXIT, setExitCode } = require('../lib/errors');
+} from '../lib/config.js';
+import { detectJava, requiredJavaMajor } from '../lib/javaCheck.js';
+import { readInstalledVersionsSync, resolveToolSpec } from '../lib/toolDownloader.js';
+import { resolvePackageDir, resolvePackageId, getFhirPackagesDir } from '../lib/fhirPkgTool.js';
+import { EXIT, setExitCode } from '../lib/errors.js';
 
-const MIN_NODE_MAJOR = 18;
+/** Minimum Node.js version, kept in sync with "engines.node" in package.json. */
+const MIN_NODE_VERSION = '22.13.0';
+
+/** Compares dotted numeric versions ("22.13.0"); returns <0, 0 or >0. */
+function compareNodeVersions(a, b) {
+  const pa = String(a).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+/** True when the given Node.js version satisfies MIN_NODE_VERSION. */
+function isSupportedNodeVersion(version = process.versions.node) {
+  return compareNodeVersions(version, MIN_NODE_VERSION) >= 0;
+}
 
 /**
  * Collects the environment diagnostics (no side effects besides running `java -version`).
@@ -28,7 +43,7 @@ const MIN_NODE_MAJOR = 18;
 async function collectDiagnostics() {
   const manifest = loadToolsManifest();
   const pkg = getPackageInfo();
-  const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
+  const nodeOk = isSupportedNodeVersion(process.versions.node);
   const minJava = requiredJavaMajor(manifest);
   const java = detectJava();
   const { dir: toolsDir, legacy } = resolveToolsDir();
@@ -66,7 +81,7 @@ async function collectDiagnostics() {
   }
 
   const problems = [];
-  if (nodeMajor < MIN_NODE_MAJOR) problems.push(`Node.js ${process.versions.node} is too old (need ${MIN_NODE_MAJOR}+, 20+ recommended)`);
+  if (!nodeOk) problems.push(`Node.js ${process.versions.node} is too old (need ${MIN_NODE_VERSION} or newer)`);
   if (!java.found) problems.push(`Java not found (${java.error})`);
   else if (java.major !== null && java.major < minJava) problems.push(`Java ${java.major} is too old (need ${minJava}+)`);
   for (const t of tools) if (!t.present) problems.push(`${t.fileName} missing`);
@@ -74,7 +89,7 @@ async function collectDiagnostics() {
 
   return {
     tool: pkg,
-    node: { version: process.versions.node, ok: nodeMajor >= MIN_NODE_MAJOR },
+    node: { version: process.versions.node, ok: nodeOk },
     java: { ...java, required: minJava, ok: java.found && (java.major === null || java.major >= minJava) },
     paths: {
       home: getHome(),
@@ -133,4 +148,4 @@ async function runDoctor(options = {}) {
   if (!d.ok) setExitCode(EXIT.ERROR);
 }
 
-module.exports = { runDoctor, collectDiagnostics };
+export { runDoctor, collectDiagnostics, isSupportedNodeVersion, MIN_NODE_VERSION };

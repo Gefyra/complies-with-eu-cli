@@ -1,10 +1,9 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const path = require('node:path');
-
-const { parseJavaMajorVersion, resolveJavaCommand, requiredJavaMajor } = require('../src/lib/javaCheck');
+import { parseJavaMajorVersion, resolveJavaCommand, requiredJavaMajor } from '../src/lib/javaCheck.js';
 
 test('parseJavaMajorVersion: legacy, modern and --version formats', () => {
   const cases = [
@@ -46,5 +45,5 @@ test('requiredJavaMajor: max of minJava over tools, at least 17', () => {
   assert.equal(requiredJavaMajor({ a: { minJava: 11 } }), 17);
   assert.equal(requiredJavaMajor({ a: { minJava: 17 }, b: { minJava: 21 } }), 21);
   assert.equal(requiredJavaMajor({ a: { minJava: '25' } }), 17, 'non-integer minJava is ignored');
-  assert.equal(requiredJavaMajor(require('../tools.json')), 21, 'pinned tools need Java 21');
+  assert.equal(requiredJavaMajor(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'tools.json'), 'utf8'))), 21, 'pinned tools need Java 21');
 });

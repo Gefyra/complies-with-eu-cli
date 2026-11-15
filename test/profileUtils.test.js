@@ -1,12 +1,10 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-
-const {
+import {
   findProfileByCanonical,
   findEuProfilesByType,
   findAllProfilesInPackage,
@@ -14,7 +12,7 @@ const {
   canonicalToSlug,
   findExamplesInPackage,
   addMetaProfileClaims,
-} = require('../src/lib/profileUtils');
+} from '../src/lib/profileUtils.js';
 
 const CWP = 'http://hl7.org/fhir/StructureDefinition/structuredefinition-compliesWithProfile';
 

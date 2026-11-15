@@ -1,12 +1,10 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-
-const { checkObligations, loadProfileByCanonical } = require('../src/lib/obligationCheck');
+import { checkObligations, loadProfileByCanonical } from '../src/lib/obligationCheck.js';
 
 const OBL = 'http://hl7.org/fhir/StructureDefinition/obligation';
 const INPUT = 'http://example.org/StructureDefinition/my-patient';

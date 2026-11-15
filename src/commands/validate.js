@@ -1,30 +1,28 @@
-'use strict';
+import path from 'node:path';
+import chalk from 'chalk';
+import ora from 'ora';
+import fs from 'fs-extra';
 
-const path = require('path');
-const chalk = require('chalk');
-const ora = require('ora');
-const fs = require('fs-extra');
-
-const inquirer = require('inquirer');
-const { getWorkdir, setWorkdir, loadSelectionCache, saveSelectionCache } = require('../lib/config');
-const { downloadFhirPackage, resolvePackageDir, packageHasSnapshots } = require('../lib/fhirPkgTool');
-const {
+import inquirer from 'inquirer';
+import { getWorkdir, setWorkdir, loadSelectionCache, saveSelectionCache } from '../lib/config.js';
+import { downloadFhirPackage, resolvePackageDir, packageHasSnapshots } from '../lib/fhirPkgTool.js';
+import {
   findProfileByCanonical,
   findEuProfilesByType,
   findAllProfilesInPackage,
   canonicalToSlug,
-} = require('../lib/profileUtils');
-const { runValidator } = require('../lib/javaValidator');
-const { createProgress } = require('../lib/validatorOutput');
-const {
+} from '../lib/profileUtils.js';
+import { runValidator } from '../lib/javaValidator.js';
+import { createProgress } from '../lib/validatorOutput.js';
+import {
   isServerReady,
   serverHasCanonical,
   startValidatorServer,
   validateBatchViaServer,
   describeBatchFailure,
-} = require('../lib/javaValidatorServer');
-const { generateExampleReport, appendExampleSummary, mdCell, mdText } = require('../lib/reportGen');
-const {
+} from '../lib/javaValidatorServer.js';
+import { generateExampleReport, appendExampleSummary, mdCell, mdText } from '../lib/reportGen.js';
+import {
   parsePackageSpec,
   writeErrorReport,
   prepareProfile,
@@ -33,11 +31,11 @@ const {
   summarizeExamples,
   describeEuPackages,
   toolInfo,
-} = require('../lib/validateCore');
-const { loadPackageMapping, savePackageMapping, loadExternalMapping } = require('../lib/mappingFile');
-const { ensureReady, resolveEuPackageDirs } = require('../lib/preflight');
-const { CliError, EXIT, setExitCode, outcomeExitCode } = require('../lib/errors');
-const { makeProgressLogger, makeResultLogger } = require('../lib/output');
+} from '../lib/validateCore.js';
+import { loadPackageMapping, savePackageMapping, loadExternalMapping } from '../lib/mappingFile.js';
+import { ensureReady, resolveEuPackageDirs } from '../lib/preflight.js';
+import { CliError, EXIT, setExitCode, outcomeExitCode } from '../lib/errors.js';
+import { makeProgressLogger, makeResultLogger } from '../lib/output.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -1074,7 +1072,7 @@ async function runValidatePackage(pkgInput, options = {}) {
   return finish();
 }
 
-module.exports = {
+export {
   runValidate,
   runValidateBatchFile,
   runValidatePackage,

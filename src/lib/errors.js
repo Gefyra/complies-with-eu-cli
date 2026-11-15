@@ -1,5 +1,3 @@
-'use strict';
-
 /** Exit codes of the CLI. */
 const EXIT = Object.freeze({
   OK: 0,
@@ -47,4 +45,4 @@ function outcomeExitCode({ failOnNoncompliant, nonCompliant = 0, errored = 0 }) 
   return EXIT.OK;
 }
 
-module.exports = { EXIT, CliError, setExitCode, outcomeExitCode };
+export { EXIT, CliError, setExitCode, outcomeExitCode };

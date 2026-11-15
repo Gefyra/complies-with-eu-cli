@@ -1,13 +1,11 @@
-'use strict';
-
-const { spawn } = require('child_process');
-const os = require('os');
-const path = require('path');
-const fs = require('fs-extra');
-const chalk = require('chalk');
-const { getFhirPkgToolJar } = require('./config');
-const { getJavaCommand } = require('./javaCheck');
-const { track } = require('./processRegistry');
+import { spawn } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'fs-extra';
+import chalk from 'chalk';
+import { getFhirPkgToolJar } from './config.js';
+import { getJavaCommand } from './javaCheck.js';
+import { track } from './processRegistry.js';
 
 /**
  * Returns the default FHIR packages directory (~/.fhir/packages).
@@ -237,7 +235,7 @@ async function resolvePackageDependencyDirs(rootPkgDir, excludeDirs = []) {
   return result;
 }
 
-module.exports = {
+export {
   downloadFhirPackage,
   downloadFhirPackages,
   resolvePackageDir,

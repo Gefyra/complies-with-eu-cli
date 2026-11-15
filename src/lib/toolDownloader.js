@@ -1,11 +1,9 @@
-'use strict';
-
-const crypto = require('crypto');
-const path = require('path');
-const fs = require('fs-extra');
-const axios = require('axios');
-const { pipeline } = require('stream/promises');
-const { CliError } = require('./errors');
+import crypto from 'node:crypto';
+import path from 'node:path';
+import fs from 'fs-extra';
+import axios from 'axios';
+import { pipeline } from 'node:stream/promises';
+import { CliError } from './errors.js';
 
 const VERSIONS_FILE = 'versions.json';
 
@@ -248,7 +246,7 @@ async function ensureTool(tool, { toolsDir, force = false, legacyDir = null, log
   return { version: target.version, path: dest, action: 'downloaded' };
 }
 
-module.exports = {
+export {
   VERSIONS_FILE,
   sha256File,
   downloadFile,

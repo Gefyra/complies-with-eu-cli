@@ -1,14 +1,12 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-
-const BIN = path.join(__dirname, '..', 'bin', 'complies-with-eu.js');
-const pkg = require('../package.json');
+const BIN = path.join(import.meta.dirname, '..', 'bin', 'complies-with-eu.js');
+const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8'));
 
 // Isolated state dir: the smoke tests must never touch the real ~/.complies-with-eu.
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'cwe-cli-'));

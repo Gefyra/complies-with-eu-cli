@@ -1,16 +1,14 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-
-const {
+import {
   parseExistsOrExpression,
   findConstraintBasePath,
   findConstraintPaths,
   isSatisfiedInInputSnapshot,
   isIgnoredSlicingDetail,
   evaluateExistsOrConstraints,
-} = require('../src/lib/constraintCheck');
+} from '../src/lib/constraintCheck.js';
 
 const EXT_URL = 'http://hl7.eu/fhir/base/StructureDefinition/patient-birthPlace';
 

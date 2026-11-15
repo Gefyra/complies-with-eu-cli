@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Tracks spawned child processes (JVMs) so they are killed when the CLI exits,
  * is interrupted (Ctrl+C) or terminated. Prevents orphaned validator servers.
@@ -49,4 +47,4 @@ function track(proc) {
   return proc;
 }
 
-module.exports = { track, killAll };
+export { track, killAll };

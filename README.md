@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-d32e22"></a>
   <a href="https://www.npmjs.com/package/@gefyra/complies-with-eu"><img alt="npm" src="https://img.shields.io/npm/v/@gefyra/complies-with-eu?color=d32e22"></a>
   <a href="https://github.com/Gefyra/complies-with-eu-cli/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Gefyra/complies-with-eu-cli/ci.yml?branch=main&label=CI"></a>
-  <img alt="Node.js >= 20" src="https://img.shields.io/badge/node-%3E%3D20-d32e22">
+  <img alt="Node.js >= 22.13" src="https://img.shields.io/badge/node-%3E%3D22.13-d32e22">
 </p>
 
 ---
@@ -71,7 +71,7 @@ You get a per-EU-profile verdict (fulfilled / not fulfilled) and a report that e
 
 | Requirement | Details |
 |-------------|---------|
-| Node.js | 20 or newer |
+| Node.js | 22.13 or newer |
 | Java | **21 or newer** on `PATH` or via `JAVA_HOME` (for example [Eclipse Temurin](https://adoptium.net)). The HL7 validator needs Java 17, but the pinned `fhir-pkg-tool` is built for Java 21. |
 | Disk | About 2 GB free: roughly 330 MB for the tools in `~/.complies-with-eu` and 1.5 GB or more for the FHIR package cache (`~/.fhir/packages`), which keeps growing with every package you validate |
 | Memory | 2 to 4 GB RAM for the validator JVM |

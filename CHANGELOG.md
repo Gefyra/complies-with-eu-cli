@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** Node.js 22.13 or newer is required (`engines.node` is `>=22.13`). Node.js 20 is no longer supported. `doctor` reports an older Node.js version as a problem.
+- The CLI is now an ES module package (`"type": "module"`). Commands, options, exit codes, the `--json` output, report formats and file locations are unchanged.
+- Updated dependencies: chalk 4 → 6, ora 5 → 10, inquirer 8 → 14, commander 14 → 15. These versions are ESM-only and are now used directly.
+
 ## [1.3.1] - 2026-11-15
 
 ### Fixed

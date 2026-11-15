@@ -1,6 +1,4 @@
-'use strict';
-
-const { loadProfileByCanonical } = require('./obligationCheck');
+import { loadProfileByCanonical } from './obligationCheck.js';
 
 /**
  * Parses an expression of the form `A.exists() or B.exists() or extension('url').exists() or …`.
@@ -242,7 +240,7 @@ async function loadEuSds(euPkgDirs, euCanonicals) {
   return map;
 }
 
-module.exports = {
+export {
   evaluateExistsOrConstraints,
   loadEuSds,
   parseExistsOrExpression,

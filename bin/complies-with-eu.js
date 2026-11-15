@@ -1,11 +1,10 @@
 #!/usr/bin/env node
-'use strict';
-
-const fs = require('fs');
-const { Command, CommanderError } = require('commander');
-const chalk = require('chalk');
-const { getPackageInfo } = require('../src/lib/config');
-const { CliError, EXIT } = require('../src/lib/errors');
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { Command, CommanderError } from 'commander';
+import chalk from 'chalk';
+import { getPackageInfo } from '../src/lib/config.js';
+import { CliError, EXIT } from '../src/lib/errors.js';
 
 const { version } = getPackageInfo();
 
@@ -60,14 +59,14 @@ function buildProgram() {
     .command('init')
     .description('Download the pinned fhir-pkg-tool and HL7 FHIR validator (see tools.json) and all EU packages')
     .option('--force', 'Force re-download of the tools even if already present')
-    .action((options) => require('../src/commands/init').runInit(options));
+    .action(async (options) => (await import('../src/commands/init.js')).runInit(options));
 
   program
     .command('doctor')
     .description('Check the environment: Node.js, Java, installed tools, EU packages and paths')
     .option('--json', 'Output the diagnostics as JSON')
     .option('--workdir <dir>', 'Workdir to report (default: $COMPLIES_WITH_EU_WORKDIR or <home>/workdir)')
-    .action((options) => require('../src/commands/doctor').runDoctor(options));
+    .action(async (options) => (await import('../src/commands/doctor.js')).runDoctor(options));
 
   program
     .command('validate <package> <canonical>')
@@ -89,7 +88,7 @@ Examples:
 
 Without --eu-profiles or --all-counterparts an interactive selection is shown;
 without a terminal (CI, --json) one of the two flags is required.`)
-    .action((pkg, canonical, options) => require('../src/commands/validate').runValidate(pkg, canonical, options));
+    .action(async (pkg, canonical, options) => (await import('../src/commands/validate.js')).runValidate(pkg, canonical, options));
 
   program
     .command('validate-batch <jsonFileOrPackage>')
@@ -111,8 +110,8 @@ without a terminal (CI, --json) one of the two flags is required.`)
     .option('--server-port <port>', 'Package mode: port for the local Java validator server (default: a free port; also $VALIDATOR_SERVER_PORT). A server already running there is reused only if it has the package loaded')
     .option('--verbose', 'Stream the full HL7 FHIR validator output to stderr (default: concise progress only)')
     .option('--debug', 'Print the full Java validator command and stack traces (implies --verbose)')
-    .action((arg, options) => {
-      const { runValidateBatchFile, runValidatePackage } = require('../src/commands/validate');
+    .action(async (arg, options) => {
+      const { runValidateBatchFile, runValidatePackage } = await import('../src/commands/validate.js');
       if (arg.endsWith('.json') && fs.existsSync(arg)) {
         return runValidateBatchFile(arg, options);
       }
@@ -137,19 +136,19 @@ without a terminal (CI, --json) one of the two flags is required.`)
     .option('--workdir <dir>', 'Directory for reports and intermediate files (default: <home>/workdir)')
     .option('--verbose', 'Passed to validate: stream the full HL7 FHIR validator output')
     .option('--debug', 'Passed to validate: debug output and stack traces (implies --verbose)')
-    .action((pkg, options) => require('../src/commands/search').runSearch(pkg, options));
+    .action(async (pkg, options) => (await import('../src/commands/search.js')).runSearch(pkg, options));
 
   program
     .command('build-index')
     .description('Scan all EU packages and output a JSON index of StructureDefinitions (used to generate eu-profiles.json)')
     .option('--output <file>', 'Write output to a file instead of stdout')
-    .action((options) => require('../src/commands/buildIndex').runBuildIndex(options));
+    .action(async (options) => (await import('../src/commands/buildIndex.js')).runBuildIndex(options));
 
   program
     .command('clean')
     .description('Remove workdir artifacts (modified JSONs, logs) but keep Markdown reports and mapping.json')
     .option('--workdir <dir>', 'Workdir to clean (default: $COMPLIES_WITH_EU_WORKDIR or <home>/workdir)')
-    .action((options) => require('../src/commands/clean').runClean(options));
+    .action(async (options) => (await import('../src/commands/clean.js')).runClean(options));
 
   return program;
 }
@@ -175,8 +174,21 @@ async function main(argv = process.argv) {
   }
 }
 
-if (require.main === module) {
+/**
+ * True when this file is the entry point (run directly or through the npm bin
+ * link or shim), false when it is imported, for example by the tests.
+ */
+function isEntryPoint(argv1 = process.argv[1]) {
+  if (!argv1) return false;
+  try {
+    return pathToFileURL(fs.realpathSync(argv1)).href === import.meta.url;
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
   main();
 }
 
-module.exports = { buildProgram, main };
+export { buildProgram, main, isEntryPoint };

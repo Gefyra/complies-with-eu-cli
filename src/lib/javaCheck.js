@@ -1,9 +1,7 @@
-'use strict';
-
-const path = require('path');
-const fs = require('fs');
-const { spawnSync } = require('child_process');
-const { CliError } = require('./errors');
+import path from 'node:path';
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { CliError } from './errors.js';
 
 const INSTALL_HINT = 'Install a current JDK/JRE, e.g. Eclipse Temurin: https://adoptium.net';
 
@@ -111,7 +109,7 @@ function getJavaCommand() {
   return resolveJavaCommand().command;
 }
 
-module.exports = {
+export {
   INSTALL_HINT,
   requiredJavaMajor,
   resolveJavaCommand,

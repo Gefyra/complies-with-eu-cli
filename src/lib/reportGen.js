@@ -1,8 +1,6 @@
-'use strict';
-
-const path = require('path');
-const fs = require('fs-extra');
-const { findConstraintPaths } = require('./constraintCheck');
+import path from 'node:path';
+import fs from 'fs-extra';
+import { findConstraintPaths } from './constraintCheck.js';
 
 /**
  * Escapes text for use in Markdown/HTML outside code spans (reports are rendered
@@ -457,7 +455,7 @@ async function appendExampleSummary({ mainReportPath, results, exReportPath }) {
   await fs.appendFile(mainReportPath, lines.join('\n'), 'utf8');
 }
 
-module.exports = {
+export {
   generateReport,
   generateExampleReport,
   appendExampleSummary,

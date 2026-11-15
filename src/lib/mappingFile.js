@@ -1,7 +1,5 @@
-'use strict';
-
-const path = require('path');
-const fs = require('fs-extra');
+import path from 'node:path';
+import fs from 'fs-extra';
 
 /**
  * Loads a package-level mapping.json file from the package workdir.
@@ -56,7 +54,7 @@ async function loadExternalMapping(filePath) {
   return data;
 }
 
-module.exports = {
+export {
   loadPackageMapping,
   savePackageMapping,
   loadExternalMapping,

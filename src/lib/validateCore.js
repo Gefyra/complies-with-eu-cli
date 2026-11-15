@@ -1,25 +1,24 @@
-'use strict';
-
-const path = require('path');
-const chalk = require('chalk');
-const fs = require('fs-extra');
-const { getWorkdir, getPackageInfo, getValidatorJar, getToolsDir } = require('./config');
-const {
+import path from 'node:path';
+import chalk from 'chalk';
+import fs from 'fs-extra';
+import { getWorkdir, getPackageInfo, getValidatorJar, getToolsDir } from './config.js';
+import {
   findEuProfilesByType,
   addCompliesWithExtensions,
   canonicalToSlug,
   findExamplesInPackage,
   addMetaProfileClaims,
-} = require('./profileUtils');
-const { runValidatorBatch } = require('./javaValidator');
-const { oneLineError } = require('./validatorOutput');
-const { resolvePackageId, resolvePackageDependencyDirs } = require('./fhirPkgTool');
-const { generateReport, mdCode, mdText, exampleErrorCount } = require('./reportGen');
-const { checkObligations } = require('./obligationCheck');
-const { evaluateExistsOrConstraints, loadEuSds } = require('./constraintCheck');
-const { readInstalledVersionsSync } = require('./toolDownloader');
+} from './profileUtils.js';
+import { runValidatorBatch } from './javaValidator.js';
+import { oneLineError } from './validatorOutput.js';
+import { resolvePackageId, resolvePackageDependencyDirs } from './fhirPkgTool.js';
+import { generateReport, mdCode, mdText, exampleErrorCount } from './reportGen.js';
+import { checkObligations } from './obligationCheck.js';
+import { evaluateExistsOrConstraints, loadEuSds } from './constraintCheck.js';
+import { readInstalledVersionsSync } from './toolDownloader.js';
+import { makeProgressLogger } from './output.js';
 
-const stderrLog = require('./output').makeProgressLogger();
+const stderrLog = makeProgressLogger();
 
 /**
  * Parses "packageName[@version]" (or "packageName#version") into { packageName, version }.
@@ -361,7 +360,7 @@ function toolInfo() {
   return { name, version, validatorVersion };
 }
 
-module.exports = {
+export {
   parsePackageSpec,
   buildErrorReport,
   writeErrorReport,

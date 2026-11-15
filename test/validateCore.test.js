@@ -1,14 +1,12 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-
-const { parsePackageSpec, buildErrorReport, summarizeExamples, runExamplesForProfile } = require('../src/lib/validateCore');
-const { createValidatorError } = require('../src/lib/validatorOutput');
-const { generateExampleReport } = require('../src/lib/reportGen');
+import { parsePackageSpec, buildErrorReport, summarizeExamples, runExamplesForProfile } from '../src/lib/validateCore.js';
+import { createValidatorError } from '../src/lib/validatorOutput.js';
+import { generateExampleReport } from '../src/lib/reportGen.js';
 
 test('runExamplesForProfile: a validator crash gives every example a one-line error', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cwe-ex-'));

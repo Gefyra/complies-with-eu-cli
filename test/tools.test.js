@@ -1,12 +1,13 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
+import { resolveToolSpec, describeDownloadError } from '../src/lib/toolDownloader.js';
+import { compareVersions } from '../src/lib/fhirPkgTool.js';
+import { isKeptFile } from '../src/commands/clean.js';
 
-const { resolveToolSpec, describeDownloadError } = require('../src/lib/toolDownloader');
-const { compareVersions } = require('../src/lib/fhirPkgTool');
-const { isKeptFile } = require('../src/commands/clean');
-const tools = require('../tools.json');
+const tools = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'tools.json'), 'utf8'));
 
 test('resolveToolSpec: pinned by default and when the override equals the pin', () => {
   const v = tools.validator;

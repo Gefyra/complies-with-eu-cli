@@ -1,17 +1,15 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-
-const {
+import {
   parseValidatorOutput,
   parseValidatorOutputBatch,
   mapSettled,
-} = require('../src/lib/javaValidator');
+} from '../src/lib/javaValidator.js';
 
-const fixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
+const fixture = (name) => fs.readFileSync(path.join(import.meta.dirname, 'fixtures', name), 'utf8');
 
 test('parseValidatorOutput: summary (with ANSI codes), issues, ids and sub-details', () => {
   const { summary, issues } = parseValidatorOutput(fixture('validator-single.txt'));
