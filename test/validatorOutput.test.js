@@ -146,6 +146,12 @@ test('extractResultInfo and tailLines', () => {
   assert.equal(tailLines('', 5).length, 0);
 });
 
+test('extractResultInfo: validator 7.x "Success:" summary', () => {
+  const info = extractResultInfo('Validating\nSuccess: 0 errors, 1 warnings, 4 notes\n  Warning @ X: y\nDone. Times: Loading: 00:01.000\n');
+  assert.equal(info.summaryLine, 'Success: 0 errors, 1 warnings, 4 notes');
+  assert.equal(info.summaryCount, 1);
+});
+
 test('formatValidatorError: includes exit code, the last 20 lines and the log path', () => {
   const out = Array.from({ length: 50 }, (_, i) => `line ${i}`).join('\n');
   const msg = formatValidatorError({ reason: 'produced no result summary', code: 1, rawOutput: out, logPath: '/w/x-raw.log' });

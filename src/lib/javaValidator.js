@@ -35,12 +35,18 @@ async function mapSettled(items, limit, fn) {
   return results;
 }
 
+// "*FAILURE*: ...", "*SUCCESS*: ..." or "Success: ..." (validator 7.x prints the
+// success summary without asterisks). Anchored at column 0, so issue lines
+// (indented) never match.
+const SUMMARY_LINE = /^\*?(FAILURE|SUCCESS)\*?:\s*(.+)/i;
+
 /**
  * Parses the Java Validator console output into structured issues.
  *
  * Expected line formats:
  *   *FAILURE*: 6 errors, 18 warnings, 12 notes
- *   *SUCCESS*: ...
+ *   *SUCCESS*: ...           (older validators)
+ *   Success: 0 errors, ...   (validator 7.x when there are no errors)
  *     Severity @ Location (line X, colY): Message {MSG_ID}
  *     Severity @ Location: Message {MSG_ID}
  *       sub-detail line
@@ -56,9 +62,9 @@ function parseValidatorOutput(output) {
 
   for (const line of lines) {
     // Summary line
-    const summaryMatch = line.match(/^\*(FAILURE|SUCCESS)\*:\s*(.+)/);
+    const summaryMatch = line.match(SUMMARY_LINE);
     if (summaryMatch) {
-      summary = { result: summaryMatch[1], text: summaryMatch[2].trim() };
+      summary = { result: summaryMatch[1].toUpperCase(), text: summaryMatch[2].trim() };
       currentIssue = null;
       continue;
     }

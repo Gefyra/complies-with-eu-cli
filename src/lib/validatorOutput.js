@@ -61,7 +61,7 @@ function extractResultInfo(rawOutput) {
   let doneLine = null;
   let summaryCount = 0;
   for (const line of stripAnsi(rawOutput).split(/\r\n|\r|\n/)) {
-    if (/^\*(FAILURE|SUCCESS)\*:/.test(line)) {
+    if (/^\*?(FAILURE|SUCCESS)\*?:/i.test(line)) {
       summaryLine = line.trim();
       summaryCount++;
     } else if (/^\s*Done\. Times:/.test(line)) {

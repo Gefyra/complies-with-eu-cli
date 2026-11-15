@@ -67,6 +67,18 @@ test('parseValidatorOutput: SUCCESS summary', () => {
   assert.deepEqual(issues, []);
 });
 
+test('parseValidatorOutput: validator 7.x "Success:" summary without asterisks (real output)', () => {
+  const { summary, issues } = parseValidatorOutput(fixture('validator-single-success-v7.txt'));
+  assert.deepEqual(summary, { result: 'SUCCESS', text: '0 errors, 1 warnings, 4 notes' });
+  assert.equal(issues.length, 5);
+  assert.equal(issues.filter(i => i.severity === 'warning').length, 1);
+});
+
+test('parseValidatorOutput: indented lines starting with "Success:" are not taken as summary', () => {
+  const { summary } = parseValidatorOutput('  Success: not a summary\n');
+  assert.equal(summary, null);
+});
+
 test('parseValidatorOutputBatch: validator 6.x/7.x result headers split issues per file', () => {
   const results = parseValidatorOutputBatch(fixture('validator-batch-v7.txt'));
   assert.deepEqual(results.map(r => r.fileName), ['Patient-a.json', 'Patient-b.json', 'Patient-c.json']);
