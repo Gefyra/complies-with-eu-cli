@@ -55,6 +55,9 @@ test('compareVersions: semver-ish ordering, releases above pre-releases', () => 
 
 test('clean.isKeptFile keeps reports and mapping.json only', () => {
   assert.equal(isKeptFile('/w/pkg/Patient-report.md'), true);
+  assert.equal(isKeptFile('/w/pkg/Patient-report.html'), true);
+  assert.equal(isKeptFile('/w/pkg/package-report.html'), true);
+  assert.equal(isKeptFile('/w/pkg/notes.html'), false);
   assert.equal(isKeptFile('/w/pkg/mapping.json'), true);
   assert.equal(isKeptFile('/w/pkg/Patient-modified.json'), false);
   assert.equal(isKeptFile('/w/pkg/_batch-raw.log'), false);

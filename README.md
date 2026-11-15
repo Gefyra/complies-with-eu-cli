@@ -65,6 +65,7 @@ You get a per-EU-profile verdict (fulfilled / not fulfilled) and a report that e
 - **One command per profile, or a whole package at once.** `validate` checks one profile; `validate-batch` checks a list of profiles or every profile of a package that has EU counterparts.
 - **Checks more than the validator does.** A static obligation check flags elements that an EU profile marks as `SHALL:able-to-populate` but your profile prohibits or does not flag as MustSupport.
 - **Example instances.** `--examples` validates the package's example resources against the selected EU profiles.
+- **Shareable HTML report.** `--html` writes a self-contained, clearly laid out HTML report next to the Markdown report, for reviews and workshops.
 - **CI ready.** Non-interactive flags, JSON output, an opt-in failing exit code, and a pinned, checksum-verified toolchain.
 
 ## Prerequisites
@@ -204,13 +205,14 @@ What happens:
 2. The profile with the given canonical is looked up; its resource type determines the candidate EU profiles.
 3. The EU profiles are selected: `--eu-profiles`, else `--all-counterparts`, else an interactive checklist (pre-filled from your last selection for that canonical). Without a terminal, one of the two flags is required.
 4. A copy of the profile with one `compliesWithProfile` extension per selected EU profile is validated by the HL7 FHIR Validator (locally, with the pinned version from `tools.json`).
-5. The obligation check and constraint auto-resolution run, and a Markdown report is written.
+5. The obligation check and constraint auto-resolution run, and a Markdown report is written (with `--html` also an HTML report).
 
 | Option | Description |
 |--------|-------------|
 | `--eu-profiles <profiles>` | Comma-separated EU profile canonical URLs (skips interactive selection) |
 | `--all-counterparts` | Use all EU profiles of the same resource type (no prompt) |
 | `--examples` | Also validate all example instances of the matching FHIR type in the package |
+| `--html` | Also write a self-contained HTML report (`<slug>-report.html`) next to the Markdown report |
 | `--json` | Output result as JSON on stdout (machine-readable, for CI use; progress goes to stderr) |
 | `--output <file>` | Write JSON output to file instead of stdout (requires `--json`) |
 | `--fail-on-noncompliant` | Exit with code 1 if a selected EU profile is not fulfilled |
@@ -233,6 +235,7 @@ If the argument is an existing `.json` file, it runs in **todo-file mode**. Othe
 | Option | Description |
 |--------|-------------|
 | `--examples` | Also validate all example instances of the matching FHIR types |
+| `--html` | Also write self-contained HTML reports next to the Markdown reports (package mode: also `package-report.html`) |
 | `--json` | Output result as JSON on stdout (machine-readable, for CI use; progress goes to stderr) |
 | `--output <file>` | Write JSON output to file instead of stdout (requires `--json`) |
 | `--fail-on-noncompliant` | Exit with code 1 if a selected EU profile is not fulfilled (2 if a profile could not be validated) |
@@ -314,7 +317,9 @@ All artifacts of a package run live in `<workdir>/<pkgSlug>/`, where `pkgSlug` i
 <workdir>/hl7-fhir-uv-ips-2-0-0/
   mapping.json            EU counterpart mapping (kept by clean)
   package-report.md       overview table linking to the profile reports
+  package-report.html     the same overview as HTML (with --html)
   <slug>-report.md        one report per profile
+  <slug>-report.html      one HTML report per profile (with --html)
   modified/               profiles with the added compliesWithProfile extensions
   examples/<slug>/        example instances and reports (with --examples)
 ```
@@ -341,6 +346,7 @@ complies-with-eu search http://hl7.org/fhir/uv/ips/StructureDefinition/Patient-u
 | `--eu-profiles <profiles>` | Passed to validate: comma-separated EU profile canonical URLs |
 | `--all-counterparts` | Passed to validate: use all EU profiles of the same type |
 | `--examples` | Passed to validate: also validate example instances |
+| `--html` | Passed to validate: also write a self-contained HTML report |
 | `--json` | Passed to validate: machine-readable output |
 | `--output <file>` | Passed to validate: write JSON output to file (requires `--json`) |
 | `--fail-on-noncompliant` | Passed to validate: exit with code 1 if a selected EU profile is not fulfilled |
@@ -366,7 +372,7 @@ Scans all EU packages from `eu-packages.json` and writes a JSON array of their S
 complies-with-eu clean [--workdir <dir>]
 ```
 
-Deletes everything in the workdir except Markdown reports (`*-report.md`) and `mapping.json` files, then removes empty directories.
+Deletes everything in the workdir except Markdown and HTML reports (`*-report.md`, `*-report.html`) and `mapping.json` files, then removes empty directories.
 
 | Option | Description |
 |--------|-------------|
@@ -390,6 +396,18 @@ Deletes everything in the workdir except Markdown reports (`*-report.md`) and `m
 If a profile cannot be processed (download error, profile not found, validator crash), an **error report** with the reason is written in place of the normal report.
 
 The **example report** (`<workdir>/examples/<slug>/<slug>-examples-report.md`) lists the checked `meta.profile` claims, an overview (how many examples are error-free) and the issues per example, grouped by severity.
+
+### HTML report
+
+With `--html` (`validate`, `validate-batch`, `search`), a `<slug>-report.html` is written next to each Markdown report; in package mode also `package-report.html`. It is built from the same data as the Markdown report, so both always show the same findings, but it is laid out for reading on screen and sharing. Texts are kept to short labels:
+
+- a header with profile, package, date, tool and validator version and the EU packages used, and a verdict banner with summary tiles (EU profiles checked, fulfilled, not fulfilled, obligation violations);
+- one card per EU profile with a PASS / FAIL badge, the validator findings (path, issue, how often it was reported), obligation violations, automatically resolved constraints and, as information, optional EU type slices that do not apply because the profile does not allow the type ("Not applicable in this profile");
+- the other validator messages, collapsed and grouped by severity with counts;
+- with `--examples`: an "Examples" section on the same page with one collapsed entry per example instance (file, id, OK / FAIL, error and warning counts, the validator issues) and a link to the Markdown examples report;
+- package mode: an overview table of all profiles with their EU counterparts, verdicts and relative links to the per-profile HTML and Markdown reports.
+
+The file is self-contained (no external fonts, scripts or images; the logo is embedded), works offline and without JavaScript, follows the light or dark mode of the system and prints with all sections expanded. A few lines of inline JavaScript add a "show only failing" filter and expand / collapse buttons. All values from profiles and validator output are HTML-escaped. Error reports of profiles that could not be processed are written as HTML too. The separate examples report stays Markdown only; its results are part of the profile's HTML page.
 
 ### JSON output
 
@@ -415,6 +433,7 @@ With `--json`, stdout contains only the JSON document (progress goes to stderr);
 
 - `report` is the full Markdown report; `validator.mode` is always `local`; `validator.summary` is the validator's result summary line.
 - With `--examples`, an `examples` object is added: `{ "reportPath", "total", "passed", "results": [ { "fileName", "pass", "errors", "warnings", "summary" } ] }`.
+- With `--html`, `htmlReportPath` (absolute path of the HTML report) is added.
 
 **`validate-batch` (todo-file mode)**
 
@@ -439,7 +458,7 @@ With `--json`, stdout contains only the JSON document (progress goes to stderr);
 }
 ```
 
-A profile that could not be validated has `"error": "<message>"` and `"pass": false`.
+A profile that could not be validated has `"error": "<message>"` and `"pass": false`. With `--html`, each profile has an `htmlReportPath` (absolute).
 
 **`validate-batch` (package mode)**
 
@@ -467,6 +486,7 @@ A profile that could not be validated has `"error": "<message>"` and `"pass": fa
 - `artifactsRoot` is absolute; `reportPath` and `packageReportPath` are relative to it.
 - `summary.success` counts profiles that were validated (compliant or not), `summary.failed` and `summary.errored` count profiles that could not be validated, including profiles that failed during preparation.
 - With `--examples`, each profile can carry an `examples` object (same shape as above); profiles that failed carry `error`.
+- With `--html`, each profile has an `htmlReportPath` and the result has a `packageHtmlReportPath`, both relative to `artifactsRoot`.
 
 ## Exit codes and CI usage
 
@@ -593,7 +613,7 @@ These parameters apply to `validate`, `validate-batch` and the local validator s
 | Path | Content | How to reset |
 |------|---------|--------------|
 | `~/.complies-with-eu/tools/` | `validator_cli.jar`, `fhir-pkg-tool.jar`, `versions.json` | `complies-with-eu init --force` |
-| `~/.complies-with-eu/workdir/` | Reports (`*-report.md`), modified profiles (`*-modified.json`), raw validator logs (`*-raw.log`, `examples/<slug>/_batch-raw.log`, `<package>/validator-server.log`, written on every run), `examples/`, package-mode folders | `complies-with-eu clean` (keeps reports and `mapping.json`), or delete the folder |
+| `~/.complies-with-eu/workdir/` | Reports (`*-report.md`, with `--html` also `*-report.html`), modified profiles (`*-modified.json`), raw validator logs (`*-raw.log`, `examples/<slug>/_batch-raw.log`, `<package>/validator-server.log`, written on every run), `examples/`, package-mode folders | `complies-with-eu clean` (keeps reports and `mapping.json`), or delete the folder |
 | `~/.complies-with-eu/logs/fhir-pkg-tool.log` | Output of the last fhir-pkg-tool run (package downloads in `init`, `validate`, `search`); its path is printed when a download fails | Delete the file |
 | `~/.complies-with-eu/cache.json` | Your last interactive EU profile selection per canonical | Delete the file |
 | `~/.fhir/packages/` | Standard FHIR package cache, shared with other FHIR tools. Holds the EU packages, your packages and their dependencies. | Delete individual `name#version` folders; they are downloaded again when needed |

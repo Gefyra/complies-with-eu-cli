@@ -13,6 +13,7 @@ import {
   exampleErrorCount,
   generateReport,
 } from '../src/lib/reportGen.js';
+import { reportInput } from './fixtures/report-input.js';
 
 const ELE1 = 'hasValue() or (children().count() > id.count())';
 const NAME_EXPR = 'family.exists() or given.exists()';
@@ -176,4 +177,16 @@ test('generateReport: duplicate detail rows are collapsed, constraint paths reco
     `| — | Constraint missing: \`${ELE1}\` (reported 2×) |`,
     `| \`Patient.name\` | Constraint missing: \`${NAME_EXPR}\` |`,
   ]);
+});
+
+test('generateReport: Markdown rendered from the report model is identical to the pre-model output', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cwe-report-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const reportPath = path.join(dir, 'r-report.md');
+  await generateReport(reportInput(reportPath));
+  const actual = fs.readFileSync(reportPath, 'utf8').replace(/\*\*Date:\*\* \d{4}-\d{2}-\d{2}/, '**Date:** 2026-01-01');
+  // Golden file captured from the Markdown renderer before the report model existed (feat/esm-node22 at 0b44fc5)
+  // (normalised: a Windows checkout may convert it to CRLF).
+  const golden = fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'report-golden.md'), 'utf8').replace(/\r\n/g, '\n');
+  assert.equal(actual, golden);
 });

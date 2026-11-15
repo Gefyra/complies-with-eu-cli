@@ -13,6 +13,8 @@ import { runValidatorBatch } from './javaValidator.js';
 import { oneLineError } from './validatorOutput.js';
 import { resolvePackageId, resolvePackageDependencyDirs } from './fhirPkgTool.js';
 import { generateReport, mdCode, mdText, exampleErrorCount } from './reportGen.js';
+import { renderHtmlReport, renderHtmlErrorReport } from './reportHtml.js';
+import { isoDate } from './reportModel.js';
 import { checkObligations } from './obligationCheck.js';
 import { evaluateExistsOrConstraints, loadEuSds } from './constraintCheck.js';
 import { readInstalledVersionsSync } from './toolDownloader.js';
@@ -77,6 +79,21 @@ function buildErrorReport(canonical, packageSpec, message, date = new Date()) {
   ].join('\n');
 }
 
+/** The HTML report path that belongs to a Markdown report path (x-report.md → x-report.html). */
+function htmlPathFor(reportPath) {
+  return reportPath.replace(/\.md$/, '.html');
+}
+
+/**
+ * Metadata shown in the HTML reports: tool and validator version (see toolInfo)
+ * and the EU packages (see describeEuPackages).
+ *
+ * @param {Array<{packageName: string, version: string|null}>} euPackages
+ */
+function reportMeta(euPackages = []) {
+  return { tool: toolInfo(), euPackages };
+}
+
 /**
  * Writes an error report Markdown file for a profile that could not be processed.
  *
@@ -85,12 +102,23 @@ function buildErrorReport(canonical, packageSpec, message, date = new Date()) {
  * @param {string} packageSpec - e.g. "kbv.basis@1.8.0"
  * @param {string} message    - Human-readable error description
  * @param {string} reportDir  - Directory where the report should be written (defaults to getWorkdir())
+ * @param {object} [opts]
+ * @param {boolean} [opts.html] - Also write <slug>-report.html
+ * @param {object}  [opts.meta] - Metadata for the HTML report (see reportMeta)
+ * @returns {Promise<string>} The Markdown report path
  */
-async function writeErrorReport(slug, canonical, packageSpec, message, reportDir = null) {
+async function writeErrorReport(slug, canonical, packageSpec, message, reportDir = null, { html = false, meta = null } = {}) {
   const targetDir = reportDir ?? getWorkdir();
   const reportPath = path.join(targetDir, `${slug}-report.md`);
   await fs.ensureDir(targetDir);
   await fs.outputFile(reportPath, buildErrorReport(canonical, packageSpec, message), 'utf8');
+  if (html) {
+    await fs.outputFile(
+      htmlPathFor(reportPath),
+      renderHtmlErrorReport({ canonical, packageSpec, message, date: isoDate(), meta }),
+      'utf8'
+    );
+  }
   return reportPath;
 }
 
@@ -158,7 +186,8 @@ function collectNonCompliant(issues) {
 
 /**
  * Post-processes validator output: runs obligation check, constraint evaluation,
- * and generates the Markdown report.
+ * and generates the Markdown report (and, with options.html, the HTML report
+ * from the same report model).
  *
  * Throws when `parsed.summary` is missing: no validator result must never be
  * reported as "compliant".
@@ -174,8 +203,8 @@ function collectNonCompliant(issues) {
  * @param {object} params.parsed - Parsed validator output ({ summary, issues })
  * @param {string} params.slug - Filename slug
  * @param {string} params.reportDir - Directory for reports (defaults to getWorkdir())
- * @param {object} params.options - Additional options (e.g. { debug })
- * @returns {Promise<{compliance: Array, reportPath: string, obligationViolationsByEuCanonical: Map, filteredNonCompliantMap: Map, autoSatisfiedConstraints: Array}>}
+ * @param {object} params.options - Additional options (e.g. { debug, html })
+ * @returns {Promise<{compliance: Array, reportPath: string, htmlReportPath: string|null, reportModel: object, obligationViolationsByEuCanonical: Map, filteredNonCompliantMap: Map, autoSatisfiedConstraints: Array}>}
  */
 async function postProcessProfile({
   pkgDir,
@@ -188,7 +217,7 @@ async function postProcessProfile({
   parsed,
   slug,
   reportDir = null,
-  options = {}, // eslint-disable-line no-unused-vars
+  options = {},
 }) {
   if (!parsed || !parsed.summary || !Array.isArray(parsed.issues)) {
     throw new Error('The FHIR validator returned no result summary for this profile (crash or unexpected output); it cannot be treated as compliant.');
@@ -227,7 +256,7 @@ async function postProcessProfile({
   // Generate report
   const reportPath = path.join(targetReportDir, `${slug}-report.md`);
   await fs.ensureDir(targetReportDir);
-  await generateReport({
+  const model = await generateReport({
     canonical,
     packageSpec,
     euProfiles,
@@ -240,6 +269,13 @@ async function postProcessProfile({
     euSdByCanonical,
   });
 
+  let htmlReportPath = null;
+  if (options.html) {
+    model.meta = reportMeta(await describeEuPackages(euPackageDirs).catch(() => []));
+    htmlReportPath = htmlPathFor(reportPath);
+    await fs.outputFile(htmlReportPath, renderHtmlReport(model), 'utf8');
+  }
+
   // Derive compliance
   const nonCompliantSet = new Set((filteredNonCompliantMap ?? collectNonCompliant(parsed.issues)).keys());
   const compliance = euProfiles.map(p => ({
@@ -250,6 +286,8 @@ async function postProcessProfile({
   return {
     compliance,
     reportPath,
+    htmlReportPath,
+    reportModel: model,
     obligationViolationsByEuCanonical,
     filteredNonCompliantMap,
     autoSatisfiedConstraints,
@@ -270,7 +308,7 @@ async function postProcessProfile({
  * @param {boolean} [params.verbose] - Stream the full validator output
  * @param {Function} [params.log] - Progress logger (default: stderr)
  * @param {Function} [params.runBatch] - runValidatorBatch replacement (tests)
- * @returns {Promise<{exampleResults: Array, exReportPath: string}|null>}
+ * @returns {Promise<{exampleResults: Array<{fileName: string, resourceId: string|null, parsed: object}>, exReportPath: string}|null>}
  */
 async function runExamplesForProfile({
   pkgDir,
@@ -301,12 +339,12 @@ async function runExamplesForProfile({
   await fs.emptyDir(examplesDir);
 
   // Write modified examples
-  const exampleFileNames = [];
+  const exampleFiles = [];
   for (const { json, fileName } of examples) {
     const modified = addMetaProfileClaims(json, euCanonicals);
     const outPath = path.join(examplesDir, fileName);
     await fs.writeJson(outPath, modified, { spaces: 2 });
-    exampleFileNames.push(fileName);
+    exampleFiles.push({ fileName, resourceId: json && typeof json.id === 'string' ? json.id : null });
   }
 
   // Validate batch
@@ -324,9 +362,10 @@ async function runExamplesForProfile({
 
   // Map results; a missing result is kept as summary:null and reported as failed
   const resultMap = new Map(batchResults.map(r => [r.fileName, r]));
-  const exampleResults = exampleFileNames.map(fn => ({
-    fileName: fn,
-    parsed: resultMap.get(fn) ?? { summary: null, issues: [], error: batchError || 'No validator result for this file' },
+  const exampleResults = exampleFiles.map(({ fileName, resourceId }) => ({
+    fileName,
+    resourceId,
+    parsed: resultMap.get(fileName) ?? { summary: null, issues: [], error: batchError || 'No validator result for this file' },
   }));
 
   const exReportPath = path.join(examplesDir, `${slug}-examples-report.md`);
@@ -399,4 +438,6 @@ export {
   describeEuPackages,
   toolInfo,
   collectNonCompliant,
+  htmlPathFor,
+  reportMeta,
 };
