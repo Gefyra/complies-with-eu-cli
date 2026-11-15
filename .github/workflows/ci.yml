@@ -21,7 +21,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node: [20, 22, 24]
+        # 22.13 is the minimum version (engines.node); 22 and 24 pick the latest release.
+        node: ['22.13', 22, 24]
     defaults:
       run:
         shell: bash

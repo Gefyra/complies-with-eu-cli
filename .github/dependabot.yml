@@ -13,20 +13,6 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: ["minor", "patch"]
-    ignore:
-      # chalk >= 5 and inquirer >= 9 are ESM-only; the CLI is CommonJS and uses
-      # require(). Upgrading needs a migration (dynamic import() or ESM), not a bump.
-      - dependency-name: chalk
-        update-types: ["version-update:semver-major"]
-      - dependency-name: inquirer
-        update-types: ["version-update:semver-major"]
-      # ora >= 6 is ESM-only as well (ora 10 also requires Node 22).
-      - dependency-name: ora
-        update-types: ["version-update:semver-major"]
-      # commander >= 15 is ESM-only and requires Node >= 22.12; revisit when
-      # Node 20 support is dropped (engines.node is ">=20").
-      - dependency-name: commander
-        versions: [">=15"]
 
   - package-ecosystem: github-actions
     directory: /
