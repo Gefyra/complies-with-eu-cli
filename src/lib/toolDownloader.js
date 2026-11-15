@@ -77,12 +77,12 @@ async function downloadFile(url, destPath, { sha256 = null } = {}) {
         maxRedirects: 10,
       });
     } catch (err) {
-      throw new Error(describeDownloadError(err, url));
+      throw new Error(describeDownloadError(err, url), { cause: err });
     }
     try {
       await pipeline(response.data, fs.createWriteStream(partPath));
     } catch (err) {
-      throw new Error(describeDownloadError(err, url));
+      throw new Error(describeDownloadError(err, url), { cause: err });
     }
     if (sha256) {
       const actual = await sha256File(partPath);
@@ -109,7 +109,7 @@ async function getLatestReleaseAsset(repo, assetPattern) {
       timeout: 30_000,
     });
   } catch (err) {
-    throw new Error(describeDownloadError(err, apiUrl));
+    throw new Error(describeDownloadError(err, apiUrl), { cause: err });
   }
   const assets = response.data.assets || [];
   const re = new RegExp(assetPattern, 'i');

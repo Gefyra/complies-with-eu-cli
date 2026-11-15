@@ -184,7 +184,7 @@ async function postProcessProfile({
 
   // Evaluate exists()-or constraints
   let filteredNonCompliantMap;
-  let autoSatisfiedConstraints = [];
+  let autoSatisfiedConstraints;
   try {
     const rawNonCompliantMap = collectNonCompliant(parsed.issues);
     const euSdByCanonical = await loadEuSds(euPackageDirs, euCanonicals);
