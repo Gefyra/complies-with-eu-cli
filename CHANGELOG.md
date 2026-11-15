@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Piping the output into a program that stops reading early (for example `cwe --help | head -3`) no longer crashes with an unhandled `EPIPE` stack trace; the CLI ends quietly.
+
 ## [2.0.0] - 2026-11-15
 
 ### Migration notes
