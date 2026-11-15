@@ -1,10 +1,18 @@
+# Version updates are batched to keep the PR noise low:
+# - one PR per month with all npm minor/patch updates,
+# - one PR per month with all GitHub Actions updates,
+# - npm major updates still arrive as separate PRs (they need a review).
+# Security updates are not affected by this file and are opened immediately.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      npm-minor-and-patch:
+        update-types: ["minor", "patch"]
     ignore:
       # chalk >= 5 and inquirer >= 9 are ESM-only; the CLI is CommonJS and uses
       # require(). Upgrading needs a migration (dynamic import() or ESM), not a bump.
@@ -23,5 +31,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
