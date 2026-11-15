@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-15
+
 ### Fixed
 
 - Profiles that validate without any error were reported as an operational error ("produced no result summary", exit code 2) instead of PASS. HL7 FHIR Validator 7.x prints the success summary as `Success: …` without asterisks, which the output parser did not recognise. Package mode (`validate-batch <package>`) was not affected.
