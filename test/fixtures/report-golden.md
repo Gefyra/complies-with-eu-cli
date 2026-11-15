@@ -27,15 +27,17 @@
 | `Patient.identifier` | No slicing found, target profile expects slicing |
 | — | weird \| detail &lt;img src=x onerror=alert(1)&gt; |
 
-## ⚠️ Obligation Check (SHALL:able-to-populate)
+## ⚠️ Obligation Check (able-to-populate)
 
-The FHIR Java Validator does **not** check obligations or MustSupport. The following evaluation therefore manually checks whether elements with `SHALL:able-to-populate` in the EU profile are at least marked as **MustSupport** in the validated profile and have a max cardinality > 0.
+The FHIR Java Validator does **not** check obligations or MustSupport. The following evaluation therefore manually checks whether elements with `SHALL:able-to-populate` or `SHOULD:able-to-populate` in the EU profile are at least marked as **MustSupport** in the validated profile and have a max cardinality > 0. Violations of both make the EU profile fail.
 
 **3 violation(s)** found across 1 EU profile(s).
 
 ### 📋 Patient-eu-lab
 
 `http://hl7.eu/fhir/laboratory/StructureDefinition/Patient-eu-lab`
+
+#### SHALL:able-to-populate
 
 | EU Element | Obligation | Issue | Cardinality (My\|Patient&lt;b&gt;) | MustSupport (My\|Patient&lt;b&gt;) |
 |------------|-----------|-------|:-----------:|:-------------------:|
