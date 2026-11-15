@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Package mode: when the validator server crashes or stops answering during the batch (for example out of memory), the progress no longer reports "Validator batch completed". It reports the failure, prints the server exit code, the last lines of its output and the path of `validator-server.log`, and each affected profile error names the log file instead of only `ECONNREFUSED` or `socket hang up`.
+- When the validator crashes during example validation, each example gets a one-line error (exit code and log path) in the `--json` output and in the examples report. The full message with the last lines of output is printed once on the console.
+- The progress label shows "Loading packages" again while the validator loads the IG packages after connecting to the terminology server, instead of staying on "Connecting to terminology server" for most of the startup.
 - Package mode starts the HL7 FHIR Validator with the `server` command instead of the deprecated `-server` option, which removes the warning "The option '-server' is no longer in use".
 
 ## [1.2.0]

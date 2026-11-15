@@ -25,13 +25,16 @@ function stripAnsi(text) {
 }
 
 /**
- * Coarse phases of a validator run, in the order they normally occur. Phase hints
- * only ever move forward, so interleaved lines cannot make the progress flicker.
+ * Coarse phases of a validator run. The validator connects to the terminology
+ * server after loading the core packages and only then loads the -ig packages
+ * (more "Load ..." / "Installing ..." lines), so until "Validating" is reached
+ * the label follows the most recent hint in either direction. "Validating" is
+ * final: later lines never move the progress back.
  */
 const PHASES = [
   { label: 'Loading packages', re: /^\s*(?:Loading\b|Load\s|Installing\s|Package Summary)/ },
   { label: 'Connecting to terminology server', re: /^\s*Terminology server\b/ },
-  { label: 'Validating', re: /^\s*(?:Validating\b|Validate\s|-- Validating\b|Get set)/ },
+  { label: 'Validating', re: /^\s*(?:Validating\b|Validate\s|-- Validating\b|Get set)/, final: true },
 ];
 
 /**
@@ -112,6 +115,56 @@ function formatValidatorError({ reason, code = null, signal = null, rawOutput = 
 }
 
 /**
+ * One-line form of formatValidatorError (no output tail), for places where the
+ * message is repeated per file or embedded in a sentence: per-example errors in
+ * the --json output and in Markdown reports.
+ *
+ * @param {object} p - Same fields as formatValidatorError (rawOutput/tail are ignored)
+ * @returns {string}
+ */
+function formatValidatorErrorShort({ reason, code = null, signal = null, logPath = null, subject = 'FHIR Java Validator' }) {
+  let exit = '';
+  if (signal) exit = ` (terminated by signal ${signal})`;
+  else if (code !== null && code !== undefined) exit = ` (exit code ${code})`;
+  return `${subject} ${reason}${exit}.${logPath ? ` Full validator output: ${logPath}` : ''}`;
+}
+
+/**
+ * Creates an Error whose message is the full formatValidatorError text and
+ * whose `shortMessage` is the one-line form. `exitCode`, `signal` and `logPath`
+ * are attached as well.
+ *
+ * @param {object} p - Fields of formatValidatorError
+ * @param {ErrorOptions} [errorOptions]
+ * @returns {Error & { shortMessage: string, exitCode: number|null, signal: string|null, logPath: string|null }}
+ */
+function createValidatorError(p, errorOptions) {
+  const err = new Error(formatValidatorError(p), errorOptions);
+  err.shortMessage = formatValidatorErrorShort(p);
+  err.exitCode = p.code ?? null;
+  err.signal = p.signal ?? null;
+  err.logPath = p.logPath ?? null;
+  return err;
+}
+
+/**
+ * Returns a one-line description of an error: its `shortMessage` if present,
+ * otherwise the first line of its message (plus the "Full validator output"
+ * line, if the message has one).
+ *
+ * @param {Error|string} err
+ * @returns {string}
+ */
+function oneLineError(err) {
+  if (err && typeof err === 'object' && err.shortMessage) return err.shortMessage;
+  const msg = String(err && typeof err === 'object' ? err.message : err);
+  const lines = msg.split(/\r\n|\r|\n/);
+  if (lines.length === 1) return msg;
+  const logLine = lines.find(l => /^Full validator output: /.test(l));
+  return logLine ? `${lines[0]} ${logLine}` : lines[0];
+}
+
+/**
  * Creates a handler for validator output chunks. It collects the full output,
  * mirrors it to `write` only when `verbose` is set, and reports phase changes
  * (detected line by line, robust against chunks that split lines).
@@ -119,7 +172,7 @@ function formatValidatorError({ reason, code = null, signal = null, rawOutput = 
  * @param {object} [opts]
  * @param {boolean} [opts.verbose]   - Mirror every chunk to `write`
  * @param {Function} [opts.write]    - Sink for mirrored output (default: stderr, gray)
- * @param {Function} [opts.onPhase]  - Called with the phase label when the phase advances
+ * @param {Function} [opts.onPhase]  - Called with the phase label when the phase changes
  * @param {Function} [opts.onChunk]  - Called with every raw chunk (e.g. to append to a log file)
  * @param {number} [opts.maxChars]   - Keep only (roughly) the last maxChars characters in memory
  *                                     (for long-running processes; the log file has everything)
@@ -134,10 +187,10 @@ function createOutputHandler({ verbose = false, write, onPhase, onChunk, maxChar
 
   const handleLine = (line) => {
     const idx = detectPhase(line);
-    if (idx > phaseIdx) {
-      phaseIdx = idx;
-      if (onPhase) onPhase(PHASES[idx].label);
-    }
+    if (idx < 0 || idx === phaseIdx) return;
+    if (phaseIdx >= 0 && PHASES[phaseIdx].final) return;
+    phaseIdx = idx;
+    if (onPhase) onPhase(PHASES[idx].label);
   };
 
   const onData = (data) => {
@@ -215,6 +268,9 @@ module.exports = {
   extractResultInfo,
   tailLines,
   formatValidatorError,
+  formatValidatorErrorShort,
+  createValidatorError,
+  oneLineError,
   createOutputHandler,
   createProgress,
 };

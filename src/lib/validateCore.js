@@ -12,6 +12,7 @@ const {
   addMetaProfileClaims,
 } = require('./profileUtils');
 const { runValidatorBatch } = require('./javaValidator');
+const { oneLineError } = require('./validatorOutput');
 const { resolvePackageId, resolvePackageDependencyDirs } = require('./fhirPkgTool');
 const { generateReport, mdCode, mdText, exampleErrorCount } = require('./reportGen');
 const { checkObligations } = require('./obligationCheck');
@@ -240,6 +241,7 @@ async function postProcessProfile({
  * @param {boolean} params.debug - Debug flag (implies verbose)
  * @param {boolean} [params.verbose] - Stream the full validator output
  * @param {Function} [params.log] - Progress logger (default: stderr)
+ * @param {Function} [params.runBatch] - runValidatorBatch replacement (tests)
  * @returns {Promise<{exampleResults: Array, exReportPath: string}|null>}
  */
 async function runExamplesForProfile({
@@ -252,6 +254,7 @@ async function runExamplesForProfile({
   debug = false,
   verbose = false,
   log = stderrLog,
+  runBatch = runValidatorBatch,
 }) {
   let examples;
   try {
@@ -284,11 +287,11 @@ async function runExamplesForProfile({
   let batchResults;
   let batchError = null;
   try {
-    ({ results: batchResults } = await runValidatorBatch(examplesDir, igIds, { debug, verbose }, resolveArgs));
+    ({ results: batchResults } = await runBatch(examplesDir, igIds, { debug, verbose }, resolveArgs));
   } catch (err) {
     log(chalk.red(`Example validation failed: ${err.message}`));
     batchResults = [];
-    batchError = err.message;
+    batchError = oneLineError(err); // one line: repeated per example and inlined in the report
   }
 
   // Map results; a missing result is kept as summary:null and reported as failed

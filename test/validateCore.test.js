@@ -2,8 +2,69 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
-const { parsePackageSpec, buildErrorReport, summarizeExamples } = require('../src/lib/validateCore');
+const { parsePackageSpec, buildErrorReport, summarizeExamples, runExamplesForProfile } = require('../src/lib/validateCore');
+const { createValidatorError } = require('../src/lib/validatorOutput');
+const { generateExampleReport } = require('../src/lib/reportGen');
+
+test('runExamplesForProfile: a validator crash gives every example a one-line error', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cwe-ex-'));
+  try {
+    const pkgDir = path.join(tmp, 'pkg');
+    fs.mkdirSync(path.join(pkgDir, 'package', 'example'), { recursive: true });
+    for (let i = 0; i < 3; i++) {
+      fs.writeFileSync(path.join(pkgDir, 'package', 'example', `Patient-${i}.json`), JSON.stringify({ resourceType: 'Patient', id: `p${i}` }));
+    }
+    const examplesDir = path.join(tmp, 'examples', 'pat');
+    const logPath = path.join(examplesDir, '_batch-raw.log');
+    const crashOutput = Array.from({ length: 30 }, (_, i) => `\tat org.hl7.Foo.bar${i}(Foo.java:${i})`).join('\n');
+    const logged = [];
+
+    const exResult = await runExamplesForProfile({
+      pkgDir,
+      fhirType: 'Patient',
+      slug: 'pat',
+      examplesDir,
+      euCanonicals: ['http://x/eu'],
+      igIds: [],
+      log: (m) => logged.push(m),
+      runBatch: async () => {
+        throw createValidatorError({ reason: 'produced no result summary', code: 1, rawOutput: crashOutput, logPath });
+      },
+    });
+
+    // The full message (with the output tail) is logged once
+    const crashLogs = logged.filter(m => m.includes('Example validation failed'));
+    assert.equal(crashLogs.length, 1);
+    assert.match(crashLogs[0], /Last 20 line\(s\) of validator output/);
+
+    const expected = `FHIR Java Validator produced no result summary (exit code 1). Full validator output: ${logPath}`;
+    const summary = summarizeExamples(exResult);
+    assert.equal(summary.total, 3);
+    for (const r of summary.results) {
+      assert.equal(r.pass, false);
+      assert.equal(r.error, expected, '--json error is one line');
+    }
+
+    await generateExampleReport({
+      canonical: 'http://x/StructureDefinition/pat',
+      packageSpec: 'x@1.0.0',
+      euCanonicals: ['http://x/eu'],
+      results: exResult.exampleResults,
+      reportPath: exResult.exReportPath,
+    });
+    const report = fs.readFileSync(exResult.exReportPath, 'utf8');
+    const errorLines = report.split('\n').filter(l => l.startsWith('**ERROR:**'));
+    assert.equal(errorLines.length, 3);
+    assert.ok(errorLines.every(l => l.includes('exit code 1') && l.endsWith('It is counted as failed.')), errorLines.join('\n'));
+    assert.ok(!report.includes('Foo.java'), 'no output tail in the report');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
 
 test('parsePackageSpec: name, name@version, name#version, default "current"', () => {
   assert.deepEqual(parsePackageSpec('hl7.fhir.uv.ips'), { packageName: 'hl7.fhir.uv.ips', version: 'current' });

@@ -21,6 +21,7 @@ const {
   serverHasCanonical,
   startValidatorServer,
   validateBatchViaServer,
+  describeBatchFailure,
 } = require('../lib/javaValidatorServer');
 const { generateExampleReport, appendExampleSummary, mdCell, mdText } = require('../lib/reportGen');
 const {
@@ -981,7 +982,18 @@ async function runValidatePackage(pkgInput, options = {}) {
       progress.fail('Validator batch failed');
       throw err;
     }
-    progress.succeed(`Validator batch completed (${files.length} profile(s))`);
+    // A server that crashed or hung mid-batch does not throw: every request just
+    // fails (ECONNREFUSED, socket hang up). Explain it with exit code, output tail and log path.
+    const failure = await describeBatchFailure(server, batchResults);
+    if (failure) {
+      progress.fail(failure.dead
+        ? `Validator server exited during the batch (${failure.failed} of ${failure.total} profile(s) without result)`
+        : `Validator batch completed with errors (${failure.failed} of ${failure.total} profile(s) without result)`);
+      log(chalk.red(failure.message));
+      batchResults = batchResults.map(r => (r.error ? { ...r, error: `${r.error}; ${failure.short}` } : r));
+    } else {
+      progress.succeed(`Validator batch completed (${files.length} profile(s))`);
+    }
     log('');
   } catch (err) {
     if (err instanceof CliError) throw err;

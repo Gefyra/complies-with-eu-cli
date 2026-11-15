@@ -13,6 +13,9 @@ const {
   extractResultInfo,
   tailLines,
   formatValidatorError,
+  formatValidatorErrorShort,
+  createValidatorError,
+  oneLineError,
   createOutputHandler,
   createProgress,
 } = require('../src/lib/validatorOutput');
@@ -98,7 +101,6 @@ test('createOutputHandler: does not mirror output unless verbose; collects every
   quiet.flush();
   assert.deepEqual(written, [], 'nothing mirrored by default');
   assert.equal(quiet.getOutput(), SAMPLE_OUTPUT);
-  // Phases only move forward (the later "Load"-free lines cannot go back)
   assert.deepEqual(phases, ['Loading packages', 'Connecting to terminology server', 'Validating']);
   assert.equal(quiet.getPhase(), 'Validating');
 
@@ -107,6 +109,23 @@ test('createOutputHandler: does not mirror output unless verbose; collects every
   verbose.onData('abc\n');
   verbose.onData(Buffer.from('def'));
   assert.equal(mirrored.join(''), 'abc\ndef');
+});
+
+test('createOutputHandler: IG packages loaded after the terminology server show "Loading packages" again', () => {
+  // Head of a real validator_cli 6.7.4 log (paths anonymised): the terminology
+  // server line comes after the core packages, the -ig packages load after it.
+  const real = fs.readFileSync(path.join(__dirname, 'fixtures', 'validator-startup-6.7.4.log'), 'utf8');
+  const phases = [];
+  const h = createOutputHandler({ onPhase: (p) => phases.push(p) });
+  for (let i = 0; i < real.length; i += 53) h.onData(Buffer.from(real.slice(i, i + 53)));
+  assert.deepEqual(phases, ['Loading packages', 'Connecting to terminology server', 'Loading packages']);
+  assert.equal(h.getPhase(), 'Loading packages', 'label follows the IG loading after the terminology line');
+
+  // "Validating" is final: later Load / Terminology lines do not move the label back
+  h.onData('  Get set...  go (00:00.123)\nValidating\n  Load late.package#1.0.0\n  Terminology server x\n');
+  h.flush();
+  assert.deepEqual(phases.slice(3), ['Validating']);
+  assert.equal(h.getPhase(), 'Validating');
 });
 
 test('createOutputHandler: maxChars keeps only the tail in memory', () => {
@@ -142,6 +161,24 @@ test('formatValidatorError: includes exit code, the last 20 lines and the log pa
 
   const server = formatValidatorError({ subject: 'FHIR Java Validator server', reason: 'did not become ready (timeout)' });
   assert.match(server, /^FHIR Java Validator server did not become ready \(timeout\)\./);
+});
+
+test('formatValidatorErrorShort, createValidatorError and oneLineError give a single line', () => {
+  assert.equal(
+    formatValidatorErrorShort({ reason: 'produced no result summary', code: 137, logPath: '/w/a.log' }),
+    'FHIR Java Validator produced no result summary (exit code 137). Full validator output: /w/a.log',
+  );
+  assert.equal(formatValidatorErrorShort({ reason: 'x', signal: 'SIGKILL' }), 'FHIR Java Validator x (terminated by signal SIGKILL).');
+
+  const err = createValidatorError({ reason: 'produced no result summary', code: 1, rawOutput: 'a\nb\nc\n', logPath: '/w/b.log' });
+  assert.ok(err.message.split('\n').length > 3, 'message keeps the tail');
+  assert.equal(oneLineError(err), err.shortMessage);
+  assert.ok(!oneLineError(err).includes('\n'));
+
+  // Plain errors: first line plus the log line, if any
+  assert.equal(oneLineError(new Error('boom')), 'boom');
+  assert.equal(oneLineError(new Error('Header.\nLast lines:\n    x\nFull validator output: /w/c.log')), 'Header. Full validator output: /w/c.log');
+  assert.equal(oneLineError(new Error('Header.\n    stack')), 'Header.');
 });
 
 test('createProgress: non-TTY prints one line per phase, no spinner frames', () => {
@@ -239,6 +276,9 @@ test('executeValidator: crash without summary rejects with tail and log path', a
       assert.match(err.message, /exited with code 1 and produced no result summary/);
       assert.match(err.message, /OutOfMemoryError: Java heap space/);
       assert.ok(err.message.includes(`Full validator output: ${logPath}`));
+      assert.equal(err.shortMessage, `FHIR Java Validator produced no result summary (exit code 1). Full validator output: ${logPath}`);
+      assert.equal(err.exitCode, 1);
+      assert.equal(err.logPath, logPath);
       return true;
     },
   );

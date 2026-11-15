@@ -11,7 +11,7 @@ const {
   createOutputHandler,
   createProgress,
   extractResultInfo,
-  formatValidatorError,
+  createValidatorError,
 } = require('./validatorOutput');
 
 /**
@@ -269,7 +269,7 @@ async function executeValidator({ args, logPath, hasResult, batch = false, verbo
     progress.fail(signal
       ? `HL7 FHIR Validator was terminated (${signal})`
       : `HL7 FHIR Validator failed (exit code ${code}, no result summary)`);
-    throw new Error(formatValidatorError({ reason: 'produced no result summary', code, signal, rawOutput, logPath: shownLog }));
+    throw createValidatorError({ reason: 'produced no result summary', code, signal, rawOutput, logPath: shownLog });
   }
 
   const { summaryLine, doneLine, summaryCount } = extractResultInfo(rawOutput);
