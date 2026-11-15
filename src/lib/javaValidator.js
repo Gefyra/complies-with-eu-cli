@@ -7,6 +7,12 @@ const chalk = require('chalk');
 const { getValidatorJar, loadValidatorParams } = require('./config');
 const { getJavaCommand } = require('./javaCheck');
 const { track } = require('./processRegistry');
+const {
+  createOutputHandler,
+  createProgress,
+  extractResultInfo,
+  formatValidatorError,
+} = require('./validatorOutput');
 
 /**
  * Runs `fn` over `items` with at most `limit` concurrent calls and returns
@@ -163,23 +169,39 @@ function parseValidatorOutputBatch(output) {
 }
 
 /**
- * Spawns the Java validator and collects its combined output. All child output
- * is mirrored to stderr (never stdout, which is reserved for --json output).
- *
- * @returns {Promise<{ code: number|null, rawOutput: string }>}
+ * Normalises the legacy boolean `debug` argument or an options object into
+ * { debug, verbose }. --debug implies verbose output.
  */
-function spawnValidator(args) {
+function normalizeRunOptions(opts) {
+  const o = (opts && typeof opts === 'object') ? opts : { debug: !!opts };
+  const debug = !!o.debug;
+  return { ...o, debug, verbose: debug || !!o.verbose };
+}
+
+/**
+ * Spawns the Java validator and collects its combined output. The output is
+ * mirrored only with `verbose` (to stderr, never to stdout, which is reserved
+ * for --json output); otherwise only phase hints are reported via `onPhase`.
+ *
+ * @param {string[]} args
+ * @param {object}   [opts]
+ * @param {boolean}  [opts.verbose]  - Stream the raw output
+ * @param {Function} [opts.onPhase]  - Phase hint callback (see validatorOutput.createOutputHandler)
+ * @param {Function} [opts.onChunk]  - Called with every raw output chunk
+ * @param {Function} [opts.write]    - Sink for mirrored output (default: stderr)
+ * @param {Function} [opts.spawnFn]  - Replacement for child_process.spawn (tests)
+ * @returns {Promise<{ code: number|null, signal: string|null, rawOutput: string }>}
+ */
+function spawnValidator(args, { verbose = false, onPhase, onChunk, write, spawnFn = spawn } = {}) {
   return new Promise((resolve, reject) => {
-    const outputChunks = [];
-    const proc = track(spawn(getJavaCommand(), args, { windowsHide: true }));
-    const onData = (data) => {
-      const text = data.toString();
-      process.stderr.write(chalk.gray(text));
-      outputChunks.push(text);
-    };
-    proc.stdout.on('data', onData);
-    proc.stderr.on('data', onData);
-    proc.on('close', (code) => resolve({ code, rawOutput: outputChunks.join('') }));
+    const handler = createOutputHandler({ verbose, write, onPhase, onChunk });
+    const proc = track(spawnFn(getJavaCommand(), args, { windowsHide: true }));
+    proc.stdout.on('data', handler.onData);
+    proc.stderr.on('data', handler.onData);
+    proc.on('close', (code, signal) => {
+      handler.flush();
+      resolve({ code, signal: signal || null, rawOutput: handler.getOutput() });
+    });
     proc.on('error', (err) => reject(new Error(`Could not start Java for the FHIR validator: ${err.message}`)));
   });
 }
@@ -203,71 +225,124 @@ function printCommand(args, debug, label, igCount) {
 }
 
 /**
+ * Runs the validator with concise progress (or streamed output with `verbose`),
+ * always writes the raw output to `logPath`, and rejects with an understandable
+ * error (exit code, output tail, log path) when `hasResult` says the output
+ * contains no usable result.
+ *
+ * @param {object}   p
+ * @param {string[]} p.args
+ * @param {string}   p.logPath
+ * @param {Function} p.hasResult      - (rawOutput) => boolean
+ * @param {boolean}  [p.batch]        - Describe the result as a number of file results
+ * @param {boolean}  [p.verbose]
+ * @param {NodeJS.WritableStream} [p.stream] - Progress/output stream (default stderr)
+ * @param {Function} [p.spawnFn]      - Replacement for child_process.spawn (tests)
+ * @returns {Promise<{ code: number|null, rawOutput: string, logPath: string }>}
+ */
+async function executeValidator({ args, logPath, hasResult, batch = false, verbose = false, stream = process.stderr, spawnFn }) {
+  const progress = createProgress({ text: 'Running HL7 FHIR Validator', verbose, stream });
+  let result;
+  try {
+    result = await spawnValidator(args, {
+      verbose,
+      spawnFn,
+      write: (text) => stream.write(chalk.gray(text)),
+      onPhase: (label) => progress.phase(label),
+    });
+  } catch (err) {
+    progress.fail('HL7 FHIR Validator could not be started');
+    throw err;
+  }
+
+  const { code, signal, rawOutput } = result;
+  // Written after the run (not streamed): in batch mode the log lives inside the
+  // directory being validated and must not exist while the validator scans it.
+  let logWritten = true;
+  try {
+    await fs.outputFile(logPath, rawOutput, 'utf8');
+  } catch {
+    logWritten = false; // best effort; never fail the run because of the log
+  }
+  const shownLog = logWritten ? logPath : null;
+  if (!hasResult(rawOutput)) {
+    progress.fail(signal
+      ? `HL7 FHIR Validator was terminated (${signal})`
+      : `HL7 FHIR Validator failed (exit code ${code}, no result summary)`);
+    throw new Error(formatValidatorError({ reason: 'produced no result summary', code, signal, rawOutput, logPath: shownLog }));
+  }
+
+  const { summaryLine, doneLine, summaryCount } = extractResultInfo(rawOutput);
+  progress.succeed(batch
+    ? `HL7 FHIR Validator finished: ${summaryCount} file result(s)`
+    : `HL7 FHIR Validator finished: ${summaryLine}`);
+  if (doneLine) stream.write(chalk.gray(`  ${doneLine}\n`));
+  if (shownLog) stream.write(chalk.gray(`  Raw validator output: ${shownLog}\n`));
+  return { code, rawOutput, logPath: shownLog };
+}
+
+/**
  * Runs the FHIR Java Validator against a resource file.
  * Does NOT use -output / -html-output; parses the console output instead.
+ * The raw output is always written to "<resource>-raw.log" next to the file.
  *
  * Rejects when the validator produced no result summary (crash, wrong Java,
  * unknown option, ...): a missing summary must never be read as "no issues".
  *
  * @param {string}   resourceFile - Path to the resource/profile JSON to validate
  * @param {string[]} igIds        - List of name#version identifiers for -ig
- * @param {boolean}  debug        - Print the full command before execution
+ * @param {boolean|{debug?: boolean, verbose?: boolean}} [opts] - Legacy debug flag or options
  * @param {string[]} extraArgs    - Additional arguments appended after base params (e.g. ['-resolve-path', dir])
- * @returns {Promise<{rawOutput: string, parsed: object, mode: 'local'}>}
+ * @returns {Promise<{rawOutput: string, parsed: object, mode: 'local', logPath: string}>}
  */
-async function runValidator(resourceFile, igIds, debug = false, extraArgs = []) {
-
+async function runValidator(resourceFile, igIds, opts = false, extraArgs = []) {
+  const { debug, verbose } = normalizeRunOptions(opts);
   const args = await buildLocalArgs(resourceFile, igIds, extraArgs);
   printCommand(args, debug, '', igIds.length);
 
-  const { code, rawOutput } = await spawnValidator(args);
-  const parsed = parseValidatorOutput(rawOutput);
   const logPath = resourceFile.replace(/\.json$/, '') + '-raw.log';
-  if (debug || !parsed.summary) {
-    await fs.outputFile(logPath, rawOutput, 'utf8');
-    if (debug) process.stderr.write(chalk.bold.yellow(`\n[DEBUG] Raw validator output written to: ${logPath}\n`));
-  }
-  if (!parsed.summary) {
-    throw new Error(
-      `FHIR Java Validator exited with code ${code} and produced no result summary. ` +
-      `Raw output: ${logPath}`
-    );
-  }
-  return { rawOutput, parsed, mode: 'local' };
+  const { rawOutput } = await executeValidator({
+    args,
+    logPath,
+    verbose,
+    hasResult: (out) => !!parseValidatorOutput(out).summary,
+  });
+  return { rawOutput, parsed: parseValidatorOutput(rawOutput), mode: 'local', logPath };
 }
 
 /**
  * Runs the FHIR Java Validator against an entire directory in one invocation.
- * Parses per-file sections from the combined output.
+ * Parses per-file sections from the combined output. The raw output is always
+ * written to "<dir>/_batch-raw.log".
  *
  * @param {string}   dirPath   - Directory containing the resource files to validate
  * @param {string[]} igIds     - List of name#version identifiers for -ig
- * @param {boolean}  debug     - Print the full command and write raw log
+ * @param {boolean|{debug?: boolean, verbose?: boolean}} [opts] - Legacy debug flag or options
  * @param {string[]} extraArgs - Additional arguments appended after base params
- * @returns {Promise<{rawOutput: string, results: Array<{fileName, summary, issues}>}>}
+ * @returns {Promise<{rawOutput: string, results: Array<{fileName, summary, issues}>, logPath: string}>}
  */
-async function runValidatorBatch(dirPath, igIds, debug = false, extraArgs = []) {
-
+async function runValidatorBatch(dirPath, igIds, opts = false, extraArgs = []) {
+  const { debug, verbose } = normalizeRunOptions(opts);
   const args = await buildLocalArgs(dirPath, igIds, extraArgs);
   printCommand(args, debug, ' (batch)', igIds.length);
 
-  const { code, rawOutput } = await spawnValidator(args);
-  const results = parseValidatorOutputBatch(rawOutput);
   const logPath = path.join(dirPath, '_batch-raw.log');
-  const noResults = !results.some(r => r.summary);
-  if (debug || noResults) {
-    await fs.outputFile(logPath, rawOutput, 'utf8');
-    if (debug) process.stderr.write(chalk.bold.yellow(`\n[DEBUG] Raw validator output written to: ${logPath}\n`));
-  }
-  if (noResults) {
-    throw new Error(`FHIR Java Validator exited with code ${code} and produced no result summary. Raw output: ${logPath}`);
-  }
-  return { rawOutput, results };
+  const { rawOutput } = await executeValidator({
+    args,
+    logPath,
+    verbose,
+    batch: true,
+    hasResult: (out) => parseValidatorOutputBatch(out).some(r => r.summary),
+  });
+  return { rawOutput, results: parseValidatorOutputBatch(rawOutput), logPath };
 }
 
 module.exports = {
   runValidator,
   runValidatorBatch,
+  executeValidator,
+  spawnValidator,
+  normalizeRunOptions,
   parseValidatorOutput,
   parseValidatorOutputBatch,
   mapSettled,

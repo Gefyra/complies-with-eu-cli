@@ -210,7 +210,10 @@ What happens:
 | `--output <file>` | Write JSON output to file instead of stdout (requires `--json`) |
 | `--fail-on-noncompliant` | Exit with code 1 if a selected EU profile is not fulfilled |
 | `--workdir <dir>` | Directory for reports and intermediate files (default: `<home>/workdir`) |
-| `--debug` | Print the full Java validator command, keep the raw output and show stack traces |
+| `--verbose` | Stream the full HL7 FHIR Validator output to stderr (default: concise progress only; the full output is always written to a log file in the workdir) |
+| `--debug` | Print the full Java validator command and show stack traces (implies `--verbose`) |
+
+**Output.** By default the HL7 FHIR Validator output (often several hundred lines) is not shown. A progress indicator on stderr shows the current phase (loading packages, validating) and ends with the validator summary, for example `*FAILURE*: 34 errors, 1 warnings, 101 notes`. Without a terminal (CI, piped stderr) each phase is printed once as a plain line. The full output is always written to `<workdir>/<profile>-modified-raw.log`, and its path is printed. Use `--verbose` to stream it to stderr as well.
 
 **`--examples`.** After the profile check, the example instances of the same resource type in the package (`package/example/` first, then `package/`) get a `meta.profile` claim for each selected EU profile and are validated in one validator run. The detailed report goes to `<workdir>/examples/<slug>/<slug>-examples-report.md`, and a summary table is appended to the profile report. With `--json`, the result includes an `examples` field.
 
@@ -234,7 +237,8 @@ If the argument is an existing `.json` file, it runs in **todo-file mode**. Othe
 | `--reselect` | Package mode: force re-prompting even if `mapping.json` exists |
 | `--type <types>` | Package mode: comma-separated resource types to filter (e.g. `Patient,Observation`) |
 | `--server-port <port>` | Package mode: port for the local Java validator server (default: a free port; also `$VALIDATOR_SERVER_PORT`). A server already running there is reused only if it has the package loaded |
-| `--debug` | Print the full Java validator command, keep the raw output and show stack traces |
+| `--verbose` | Stream the full HL7 FHIR Validator output to stderr (default: concise progress only; the full output is always written to a log file in the workdir) |
+| `--debug` | Print the full Java validator command and show stack traces (implies `--verbose`) |
 
 #### Todo-file mode
 
@@ -336,7 +340,8 @@ complies-with-eu search http://hl7.org/fhir/uv/ips/StructureDefinition/Patient-u
 | `--output <file>` | Passed to validate: write JSON output to file (requires `--json`) |
 | `--fail-on-noncompliant` | Passed to validate: exit with code 1 if a selected EU profile is not fulfilled |
 | `--workdir <dir>` | Directory for reports and intermediate files (default: `<home>/workdir`) |
-| `--debug` | Passed to validate: debug output and stack traces |
+| `--verbose` | Passed to validate: stream the full HL7 FHIR Validator output |
+| `--debug` | Passed to validate: debug output and stack traces (implies `--verbose`) |
 
 ### build-index
 
@@ -582,7 +587,7 @@ These parameters apply to `validate`, `validate-batch` and the local validator s
 | Path | Content | How to reset |
 |------|---------|--------------|
 | `~/.complies-with-eu/tools/` | `validator_cli.jar`, `fhir-pkg-tool.jar`, `versions.json` | `complies-with-eu init --force` |
-| `~/.complies-with-eu/workdir/` | Reports (`*-report.md`), modified profiles (`*-modified.json`), raw validator logs (`*-raw.log`, with `--debug` or when the validator fails), `examples/`, package-mode folders | `complies-with-eu clean` (keeps reports and `mapping.json`), or delete the folder |
+| `~/.complies-with-eu/workdir/` | Reports (`*-report.md`), modified profiles (`*-modified.json`), raw validator logs (`*-raw.log`, `examples/<slug>/_batch-raw.log`, `<package>/validator-server.log`, written on every run), `examples/`, package-mode folders | `complies-with-eu clean` (keeps reports and `mapping.json`), or delete the folder |
 | `~/.complies-with-eu/cache.json` | Your last interactive EU profile selection per canonical | Delete the file |
 | `~/.fhir/packages/` | Standard FHIR package cache, shared with other FHIR tools. Holds the EU packages, your packages and their dependencies. | Delete individual `name#version` folders; they are downloaded again when needed |
 
@@ -603,7 +608,8 @@ Versions up to 1.1.x kept their state inside the installation directory (`.tools
 | `--output requires --json` | Add `--json`. |
 | `Package '…' could not be downloaded` | Check the package name and version (for example on [packages.fhir.org](https://packages.fhir.org)), or try `complies-with-eu search <canonical>`. |
 | Profile not found | The canonical is not in that package version. List the profiles with `complies-with-eu search <package>`. |
-| `… produced no result summary` | The validator crashed (often out of memory or a broken jar). Open the raw log named in the message, rerun with `--debug`, or reinstall the tools with `init --force`. |
+| `… produced no result summary` | The validator crashed (often out of memory or a broken jar). The message shows the last lines of the validator output; open the raw log named in the message, rerun with `--verbose` (or `--debug`), or reinstall the tools with `init --force`. |
+| Need the full validator output | It is not shown by default. Every run writes it to a log file in the workdir: `<workdir>/<profile>-modified-raw.log` (`validate`, todo-file mode), `<workdir>/examples/<slug>/_batch-raw.log` (`--examples`), `<workdir>/<package>/validator-server.log` (package mode). The path is printed after each run and when the validator fails. `--verbose` streams it to stderr as well. |
 | First run takes several minutes | The validator downloads dependencies and terminology packages into `~/.fhir/packages` once. |
 | `--server-port` fails | Something else is running on that port, or a validator server without your package. Omit the option to use a free port. |
 

@@ -24,6 +24,11 @@ Reports:
   Written to <workdir>/<profile>-report.md (package mode: <workdir>/<package>/).
   Default workdir: ~/.complies-with-eu/workdir (override: --workdir or COMPLIES_WITH_EU_WORKDIR).
 
+Validator output:
+  By default only concise progress is shown. The full HL7 FHIR validator output is always
+  written to a log file in the workdir (*-raw.log, _batch-raw.log, validator-server.log);
+  its path is printed when the validator fails. Use --verbose to stream it to stderr.
+
 Exit codes:
   0  success (also when profiles are non-compliant, unless --fail-on-noncompliant is set)
   1  at least one selected EU profile is not fulfilled (only with --fail-on-noncompliant)
@@ -74,7 +79,8 @@ function buildProgram() {
     .option('--output <file>', 'Write JSON output to file instead of stdout (requires --json)')
     .option('--fail-on-noncompliant', 'Exit with code 1 if a selected EU profile is not fulfilled')
     .option('--workdir <dir>', 'Directory for reports and intermediate files (default: <home>/workdir)')
-    .option('--debug', 'Print the full Java validator command, keep the raw output and show stack traces')
+    .option('--verbose', 'Stream the full HL7 FHIR validator output to stderr (default: concise progress only)')
+    .option('--debug', 'Print the full Java validator command and stack traces (implies --verbose)')
     .addHelpText('after', `
 Examples:
   $ complies-with-eu validate hl7.fhir.uv.ips@2.0.0 http://hl7.org/fhir/uv/ips/StructureDefinition/Patient-uv-ips --all-counterparts
@@ -103,7 +109,8 @@ without a terminal (CI, --json) one of the two flags is required.`)
     .option('--reselect', 'Package mode: force re-prompting even if mapping.json exists')
     .option('--type <types>', 'Package mode: comma-separated resource types to filter (e.g. Patient,Observation)')
     .option('--server-port <port>', 'Package mode: port for the local Java validator server (default: a free port; also $VALIDATOR_SERVER_PORT). A server already running there is reused only if it has the package loaded')
-    .option('--debug', 'Print the full Java validator command, keep the raw output and show stack traces')
+    .option('--verbose', 'Stream the full HL7 FHIR validator output to stderr (default: concise progress only)')
+    .option('--debug', 'Print the full Java validator command and stack traces (implies --verbose)')
     .action((arg, options) => {
       const { runValidateBatchFile, runValidatePackage } = require('../src/commands/validate');
       if (arg.endsWith('.json') && fs.existsSync(arg)) {
@@ -128,7 +135,8 @@ without a terminal (CI, --json) one of the two flags is required.`)
     .option('--output <file>', 'Passed to validate: write JSON output to file (requires --json)')
     .option('--fail-on-noncompliant', 'Passed to validate: exit with code 1 if a selected EU profile is not fulfilled')
     .option('--workdir <dir>', 'Directory for reports and intermediate files (default: <home>/workdir)')
-    .option('--debug', 'Passed to validate: debug output and stack traces')
+    .option('--verbose', 'Passed to validate: stream the full HL7 FHIR validator output')
+    .option('--debug', 'Passed to validate: debug output and stack traces (implies --verbose)')
     .action((pkg, options) => require('../src/commands/search').runSearch(pkg, options));
 
   program

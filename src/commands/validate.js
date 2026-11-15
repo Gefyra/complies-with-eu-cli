@@ -15,6 +15,7 @@ const {
   canonicalToSlug,
 } = require('../lib/profileUtils');
 const { runValidator } = require('../lib/javaValidator');
+const { createProgress } = require('../lib/validatorOutput');
 const {
   isServerReady,
   serverHasCanonical,
@@ -69,6 +70,13 @@ function applyCommonOptions(options) {
   if (options.output && !options.json) {
     throw new CliError('--output requires --json.');
   }
+  // --debug implies --verbose (full validator output)
+  if (options.debug) options.verbose = true;
+}
+
+/** Options for runValidator / runValidatorBatch derived from the CLI options. */
+function validatorRunOptions(options) {
+  return { debug: !!options.debug, verbose: !!options.verbose || !!options.debug };
 }
 
 /**
@@ -163,8 +171,8 @@ async function selectEuProfiles({ canonical, discovered, options, log }) {
  * Runs example validation for one profile and writes/links the example report.
  * @returns {Promise<object|null>} JSON summary (see summarizeExamples) or null if no examples
  */
-async function validateExamples({ pkgDir, fhirType, slug, examplesDir, euCanonicals, igIds, canonical, packageSpec, mainReportPath, debug, log }) {
-  const exResult = await runExamplesForProfile({ pkgDir, fhirType, slug, examplesDir, euCanonicals, igIds, debug, log });
+async function validateExamples({ pkgDir, fhirType, slug, examplesDir, euCanonicals, igIds, canonical, packageSpec, mainReportPath, debug, verbose, log }) {
+  const exResult = await runExamplesForProfile({ pkgDir, fhirType, slug, examplesDir, euCanonicals, igIds, debug, verbose, log });
   if (!exResult) return summarizeExamples(null);
   try {
     await generateExampleReport({
@@ -279,10 +287,10 @@ async function runValidate(pkg, canonical, options = {}) {
   }
 
   // 7. Run FHIR Java Validator
-  log(chalk.bold('\nRunning FHIR Java Validator...\n'));
+  log('');
   let parsed, mode;
   try {
-    ({ parsed, mode } = await runValidator(modifiedProfilePath, igIds, !!options.debug));
+    ({ parsed, mode } = await runValidator(modifiedProfilePath, igIds, validatorRunOptions(options)));
   } catch (err) {
     throw new CliError(`Validator failed: ${err.message}`);
   }
@@ -325,6 +333,7 @@ async function runValidate(pkg, canonical, options = {}) {
       packageSpec,
       mainReportPath: reportPath,
       debug: !!options.debug,
+      verbose: !!options.verbose,
       log,
     });
     if (examples.reportPath) {
@@ -422,6 +431,7 @@ async function runValidateBatchFile(jsonFile, options = {}) {
   const fail = async (task, message) => {
     const { canonical, packageSpec, slug } = task;
     const reportPath = await writeErrorReport(slug, canonical, packageSpec, message);
+    log(chalk.red(`  ${message}`));
     log(chalk.red(`  Error report: ${reportPath}`));
     results.failed++;
     results.reports.push({ canonical, packageSpec, reportPath, error: true, errorMessage: message, pass: false, compliance: [] });
@@ -509,13 +519,11 @@ async function runValidateBatchFile(jsonFile, options = {}) {
     }
 
     // ── Step 5: Run FHIR Java Validator ───────────────────────────────────
-    const spinner = ora('  Validating...').start();
+    // runValidator shows its own progress (or the full output with --verbose)
     let parsed;
     try {
-      ({ parsed } = await runValidator(modifiedProfilePath, igIds, !!options.debug));
-      spinner.succeed('Validation complete');
+      ({ parsed } = await runValidator(modifiedProfilePath, igIds, validatorRunOptions(options)));
     } catch (err) {
-      spinner.fail('Validator failed');
       await fail(task, `FHIR Java Validator failed: ${err.message}`);
       continue;
     }
@@ -559,6 +567,7 @@ async function runValidateBatchFile(jsonFile, options = {}) {
         packageSpec,
         mainReportPath: reportPath,
         debug: !!options.debug,
+        verbose: !!options.verbose,
         log,
       });
       if (entry.examples.reportPath) log(chalk.green(`  Examples report: ${entry.examples.reportPath}`));
@@ -739,7 +748,8 @@ async function discoverAndResolveMapping(pkgDir, euPackageDirs, pkgWorkdir, opti
  * validator server. Never reuses an unknown responder: a validator loaded with
  * other IGs would silently produce wrong verdicts.
  */
-async function acquireLocalServer({ options, igIds, verifyCanonical, log }) {
+async function acquireLocalServer({ options, igIds, verifyCanonical, log, logFile = null }) {
+  const serverOpts = { igIds, debug: !!options.debug, verbose: !!options.verbose, logFile };
   const explicit = options.serverPort || process.env.VALIDATOR_SERVER_PORT;
   if (explicit) {
     const port = parseInt(explicit, 10);
@@ -757,10 +767,10 @@ async function acquireLocalServer({ options, igIds, verifyCanonical, log }) {
       );
     }
     log(chalk.cyan(`  Starting local validator server on port ${port}...`));
-    return startValidatorServer({ igIds, port, debug: !!options.debug });
+    return startValidatorServer({ ...serverOpts, port });
   }
   log(chalk.cyan('  Starting local validator server on a free port...'));
-  return startValidatorServer({ igIds, debug: !!options.debug });
+  return startValidatorServer(serverOpts);
 }
 
 /**
@@ -956,11 +966,23 @@ async function runValidatePackage(pkgInput, options = {}) {
   let batchResults;
   let server = null;
   try {
-    server = await acquireLocalServer({ options, igIds, verifyCanonical: prepared[0].canonical, log });
-    log(chalk.green(`  Validator server ready on port ${server.port}\n`));
+    server = await acquireLocalServer({
+      options,
+      igIds,
+      verifyCanonical: prepared[0].canonical,
+      log,
+      logFile: path.join(pkgWorkdir, 'validator-server.log'),
+    });
     const files = prepared.map(p => path.basename(p.modifiedProfilePath));
-    ({ results: batchResults } = await validateBatchViaServer(server.port, modifiedDir, files));
-    log(chalk.green('  Validator batch completed\n'));
+    const progress = createProgress({ text: `Validating ${files.length} profile(s) via the validator server`, verbose: !!options.verbose });
+    try {
+      ({ results: batchResults } = await validateBatchViaServer(server.port, modifiedDir, files));
+    } catch (err) {
+      progress.fail('Validator batch failed');
+      throw err;
+    }
+    progress.succeed(`Validator batch completed (${files.length} profile(s))`);
+    log('');
   } catch (err) {
     if (err instanceof CliError) throw err;
     throw new CliError(`Validator server failed: ${err.message}`);
@@ -1027,6 +1049,7 @@ async function runValidatePackage(pkgInput, options = {}) {
         packageSpec,
         mainReportPath: entry && !entry.error ? entry.reportPath : null,
         debug: !!options.debug,
+        verbose: !!options.verbose,
         log,
       });
       if (entry) entry.examples = examples;

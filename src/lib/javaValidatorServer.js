@@ -10,12 +10,15 @@ const { getValidatorJar, loadValidatorParams } = require('./config');
 const { getJavaCommand } = require('./javaCheck');
 const { track } = require('./processRegistry');
 const { mapSettled } = require('./javaValidator');
+const { createOutputHandler, createProgress, formatValidatorError } = require('./validatorOutput');
 
 const DEFAULT_PORT = 7272;
 const READY_POLL_INTERVAL_MS = 2500;
 // Total budget: port open + lazy IG loading + possible network timeouts on first request
 const READY_TIMEOUT_MS = 600_000; // 10 min
 const POST_CONCURRENCY = 4;
+// In-memory tail of the server output kept for error messages (the full output goes to the log file)
+const SERVER_OUTPUT_TAIL_CHARS = 64 * 1024;
 // Text of the validator message SD_EXTENSION_COMPLIES_WITH_ERROR
 const COMPLIES_WITH_ERROR_TEXT = /does not comply with claimed profile '[^']+'/;
 
@@ -115,18 +118,25 @@ async function warmupServer(port, deadline, isDead) {
  * Waits until the server is truly ready (lazy loading complete) before returning.
  * The JVM is killed if startup or warmup fails, and when the CLI exits.
  *
+ * The server output is written to `logFile` (when given) and streamed to stderr
+ * only with `verbose`/`debug`; otherwise a concise progress indicator is shown.
+ * Startup failures include the last lines of server output and the log path.
+ *
  * @param {object}   opts
- * @param {string[]} opts.igIds  - IG identifiers (name#version or local path) to pre-load
- * @param {number}  [opts.port]  - Port to listen on (default: a free port chosen by the OS)
- * @param {boolean} [opts.debug] - Print the full startup command
- * @returns {Promise<{ port: number, stop: Function }>}
+ * @param {string[]} opts.igIds    - IG identifiers (name#version or local path) to pre-load
+ * @param {number}  [opts.port]    - Port to listen on (default: a free port chosen by the OS)
+ * @param {boolean} [opts.debug]   - Print the full startup command (implies verbose)
+ * @param {boolean} [opts.verbose] - Stream the full server output to stderr
+ * @param {string}  [opts.logFile] - File that receives the raw server output
+ * @returns {Promise<{ port: number, stop: Function, logFile: string|null }>}
  */
-async function startValidatorServer({ igIds, port = null, debug = false }) {
+async function startValidatorServer({ igIds, port = null, debug = false, verbose = false, logFile = null }) {
   const jar = getValidatorJar();
   if (!await fs.pathExists(jar)) {
     throw new Error(`validator_cli.jar not found at ${jar}. Run: complies-with-eu init`);
   }
   const listenPort = port || await findFreePort();
+  const showOutput = debug || verbose;
 
   const baseParams = loadValidatorParams();
   const igArgs = igIds.flatMap(id => ['-ig', id]);
@@ -145,15 +155,37 @@ async function startValidatorServer({ igIds, port = null, debug = false }) {
     process.stderr.write(chalk.gray(`  java -jar validator_cli.jar server ${listenPort} ... (${igIds.length} IGs)\n`));
   }
 
-  const proc = track(spawn(getJavaCommand(), args, { windowsHide: true }));
+  let logStream = null;
+  if (logFile) {
+    await fs.ensureDir(path.dirname(logFile));
+    logStream = fs.createWriteStream(logFile, { encoding: 'utf8' });
+    logStream.on('error', () => { /* the log is best effort */ });
+  }
 
-  proc.stdout.on('data', d => process.stderr.write(chalk.gray(d.toString())));
-  proc.stderr.on('data', d => process.stderr.write(chalk.gray(d.toString())));
+  const progress = createProgress({ text: 'Starting HL7 FHIR Validator server', verbose: showOutput });
+  let starting = true;
+  const handler = createOutputHandler({
+    verbose: showOutput,
+    maxChars: SERVER_OUTPUT_TAIL_CHARS,
+    onPhase: (label) => { if (starting) progress.phase(label); },
+    onChunk: (text) => { if (logStream) logStream.write(text); },
+  });
+
+  const proc = track(spawn(getJavaCommand(), args, { windowsHide: true }));
+  proc.stdout.on('data', handler.onData);
+  proc.stderr.on('data', handler.onData);
 
   let procExited = false;
   let procError = null;
+  let exitCode = null;
+  let exitSignal = null;
   proc.on('error', err => { procError = err; });
-  proc.on('exit', () => { procExited = true; });
+  proc.on('exit', (code, signal) => {
+    procExited = true;
+    exitCode = code;
+    exitSignal = signal || null;
+  });
+  proc.on('close', () => { if (logStream) logStream.end(); });
 
   const stop = () => {
     if (!procExited) {
@@ -170,15 +202,33 @@ async function startValidatorServer({ igIds, port = null, debug = false }) {
     const isDead = () => procExited || !!procError;
 
     await waitForPort(listenPort, deadline, isDead);
-    process.stderr.write(chalk.gray(`  Validator server accepting connections on port ${listenPort}, warming up...\n`));
+    if (showOutput) {
+      process.stderr.write(chalk.gray(`  Validator server accepting connections on port ${listenPort}, warming up...\n`));
+    } else {
+      progress.phase('Warming up');
+    }
 
     await warmupServer(listenPort, deadline, isDead);
   } catch (err) {
+    starting = false;
     stop();
-    throw err;
+    progress.fail('HL7 FHIR Validator server could not be started');
+    if (procError) throw err;
+    handler.flush();
+    throw new Error(formatValidatorError({
+      subject: 'FHIR Java Validator server',
+      reason: `did not become ready (${err.message})`,
+      code: procExited ? exitCode : null,
+      signal: exitSignal,
+      rawOutput: handler.getOutput(),
+      logPath: logFile,
+    }), { cause: err });
   }
 
-  return { port: listenPort, stop };
+  starting = false;
+  progress.succeed(`HL7 FHIR Validator server ready on port ${listenPort}`);
+  if (logFile) process.stderr.write(chalk.gray(`  Server output: ${logFile}\n`));
+  return { port: listenPort, stop, logFile };
 }
 
 /**

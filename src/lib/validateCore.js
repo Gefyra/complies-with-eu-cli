@@ -237,7 +237,8 @@ async function postProcessProfile({
  * @param {string} params.examplesDir - Directory for example artifacts
  * @param {string[]} params.euCanonicals - EU canonical URLs
  * @param {string[]} params.igIds - IG identifiers for the validator
- * @param {boolean} params.debug - Debug flag
+ * @param {boolean} params.debug - Debug flag (implies verbose)
+ * @param {boolean} [params.verbose] - Stream the full validator output
  * @param {Function} [params.log] - Progress logger (default: stderr)
  * @returns {Promise<{exampleResults: Array, exReportPath: string}|null>}
  */
@@ -249,6 +250,7 @@ async function runExamplesForProfile({
   euCanonicals,
   igIds,
   debug = false,
+  verbose = false,
   log = stderrLog,
 }) {
   let examples;
@@ -282,7 +284,7 @@ async function runExamplesForProfile({
   let batchResults;
   let batchError = null;
   try {
-    ({ results: batchResults } = await runValidatorBatch(examplesDir, igIds, debug, resolveArgs));
+    ({ results: batchResults } = await runValidatorBatch(examplesDir, igIds, { debug, verbose }, resolveArgs));
   } catch (err) {
     log(chalk.red(`Example validation failed: ${err.message}`));
     batchResults = [];

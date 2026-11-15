@@ -47,14 +47,17 @@ test('--help lists every command and exits 0', () => {
 test('flags used by CI integrations stay available', () => {
   const validate = run(['validate', '--help']);
   assert.equal(validate.code, 0, validate.stderr);
-  for (const flag of ['--eu-profiles', '--json', '--output', '--fail-on-noncompliant', '--all-counterparts', '--workdir', '--examples']) {
+  for (const flag of ['--eu-profiles', '--json', '--output', '--fail-on-noncompliant', '--all-counterparts', '--workdir', '--examples', '--verbose', '--debug']) {
     assert.ok(validate.stdout.includes(flag), `validate ${flag}`);
   }
   const batch = run(['validate-batch', '--help']);
   assert.equal(batch.code, 0, batch.stderr);
-  for (const flag of ['--json', '--output', '--fail-on-noncompliant']) {
+  for (const flag of ['--json', '--output', '--fail-on-noncompliant', '--verbose', '--debug']) {
     assert.ok(batch.stdout.includes(flag), `validate-batch ${flag}`);
   }
+  const search = run(['search', '--help']);
+  assert.equal(search.code, 0, search.stderr);
+  assert.ok(search.stdout.includes('--verbose'), 'search --verbose');
   const index = run(['build-index', '--help']);
   assert.equal(index.code, 0, index.stderr);
   assert.ok(index.stdout.includes('--output'));
