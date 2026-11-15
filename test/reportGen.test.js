@@ -185,7 +185,7 @@ test('generateReport: Markdown rendered from the report model is identical to th
   const reportPath = path.join(dir, 'r-report.md');
   await generateReport(reportInput(reportPath));
   const actual = fs.readFileSync(reportPath, 'utf8').replace(/\*\*Date:\*\* \d{4}-\d{2}-\d{2}/, '**Date:** 2026-01-01');
-  // Golden file captured from the Markdown renderer before the report model existed
+  // Golden file captured from the Markdown renderer before the report model existed (feat/esm-node22 at 0b44fc5)
   // (normalised: a Windows checkout may convert it to CRLF).
   const golden = fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'report-golden.md'), 'utf8').replace(/\r\n/g, '\n');
   assert.equal(actual, golden);

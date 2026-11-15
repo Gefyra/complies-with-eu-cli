@@ -43,6 +43,14 @@ The FHIR Java Validator does **not** check obligations or MustSupport. The follo
 | `Patient.contact:emergency` | `SHALL:able-to-populate` | Element not found in profile | — | — |
 | `Patient.photo` | `SHALL:able-to-populate` | `max: 0` — element prohibited, MustSupport missing | 0..0 | ❌ |
 
+## ℹ️ Optional EU type slices not allowed in this profile
+
+The validator reported these optional type slices of the EU profile as missing. This profile does not allow the type at all, which is a permitted restriction, so they were excluded from the compliance result.
+
+| EU Profile | EU slice | Type | Details |
+|-----------|----------|------|---------|
+| patient-eu-core | `Patient.deceased[x]:deceasedBoolean` | `boolean` | type boolean is not allowed here (allowed: dateTime \| &lt;x&gt;); the EU slice is optional (0..1) |
+
 ## ℹ️ Automatically resolved constraints
 
 The following `.exists() or …` constraints were not declared by the input profile, but are structurally guaranteed by the profile's min cardinalities. They were excluded from the compliance result.

@@ -1,6 +1,7 @@
 // Shared input for the report tests: one profile checked against three EU
 // profiles (one compliesWithProfile failure, one obligation failure, one pass),
-// with auto-resolved constraints and other validator messages of every severity.
+// with auto-resolved constraints, an optional EU type slice that is not allowed,
+// and other validator messages of every severity.
 // Several values contain Markdown/HTML-significant characters on purpose.
 
 export const EU_CORE = 'http://hl7.eu/fhir/base/StructureDefinition/patient-eu-core';
@@ -70,6 +71,11 @@ export function reportInput(reportPath) {
     ]),
     autoSatisfiedConstraints: [
       { euCanonical: EU_IPS, expression: 'telecom.exists() or address.exists()', basePath: 'Patient', matchedChild: 'Patient.address (min 1)' },
+      {
+        kind: 'type-slice', euCanonical: EU_CORE, basePath: 'Patient.deceased[x]:deceasedBoolean', sliceName: 'deceasedBoolean', type: 'boolean',
+        expression: 'Mismatch in slicing at Patient.deceased[x]:deceasedBoolean: no slice found for the discriminator type:$this with the values boolean',
+        matchedChild: 'type boolean is not allowed here (allowed: dateTime | <x>); the EU slice is optional (0..1)',
+      },
     ],
     euSdByCanonical: new Map([[EU_CORE, euSdCore]]),
   };
