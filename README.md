@@ -64,7 +64,7 @@ You get a per-EU-profile verdict (fulfilled / not fulfilled) and a report that e
 
 - **One command per profile, or a whole package at once.** `validate` checks one profile; `validate-batch` checks a list of profiles or every profile of a package that has EU counterparts.
 - **Checks more than the validator does.** A static obligation check flags elements that an EU profile marks as `SHALL:able-to-populate` or `SHOULD:able-to-populate` but your profile prohibits (`max = 0`), does not contain or does not flag as MustSupport. Both strengths make the EU profile fail and appear under separate headings in the report.
-- **Fewer false positives.** Validator findings that your profile provably satisfies are resolved automatically and listed separately in the report: `.exists() or …` constraints guaranteed by your minimum cardinalities, and missing optional EU type slices for a type your profile does not allow at all (a permitted restriction).
+- **Fewer false positives.** Validator findings that do not count against your profile are resolved automatically and listed separately in the report: `.exists() or …` constraints guaranteed by your minimum cardinalities, and missing optional EU type slices for a type your profile does not allow at all (a permitted restriction).
 - **Example instances.** `--examples` validates the package's example resources against the selected EU profiles.
 - **Shareable HTML report.** `--html` writes a self-contained, clearly laid out HTML report next to the Markdown report, for reviews and workshops.
 - **CI ready.** Non-interactive flags, JSON output, an opt-in failing exit code, and a pinned, checksum-verified toolchain.
@@ -154,7 +154,7 @@ complies-with-eu validate de.gematik.isik@5.1.1 \
 
 ## Commands
 
-`<package>` always has the form `name[@version|#version]`, where `name` is a FHIR package id with at least two dot-separated parts (for example `hl7.fhir.uv.ips`). Other arguments are rejected with a short hint (`search` also accepts a canonical URL). Without a version, `current` is used, which resolves to the newest version installed in `~/.fhir/packages`.
+`<package>` always has the form `name[@version|#version]`, where `name` is a FHIR package id with at least two dot-separated parts (for example `hl7.fhir.uv.ips`). Other arguments are rejected with a short hint (`search` also accepts a canonical URL, `validate-batch` a todo file). Without a version, `current` is used, which resolves to the newest version installed in `~/.fhir/packages`.
 
 | Command | Purpose |
 |---------|---------|
