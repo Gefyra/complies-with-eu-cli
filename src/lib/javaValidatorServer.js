@@ -133,7 +133,7 @@ async function startValidatorServer({ igIds, port = null, debug = false }) {
 
   const args = [
     '-jar', jar,
-    '-server', String(listenPort),
+    'server', String(listenPort),
     ...igArgs,
     ...baseParams,
   ];
@@ -142,7 +142,7 @@ async function startValidatorServer({ igIds, port = null, debug = false }) {
     process.stderr.write(chalk.bold.yellow('\n[DEBUG] Starting validator server:\n'));
     process.stderr.write(chalk.yellow(`${getJavaCommand()} ${args.join(' ')}\n\n`));
   } else {
-    process.stderr.write(chalk.gray(`  java -jar validator_cli.jar -server ${listenPort} ... (${igIds.length} IGs)\n`));
+    process.stderr.write(chalk.gray(`  java -jar validator_cli.jar server ${listenPort} ... (${igIds.length} IGs)\n`));
   }
 
   const proc = track(spawn(getJavaCommand(), args, { windowsHide: true }));
