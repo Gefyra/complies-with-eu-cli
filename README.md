@@ -399,15 +399,15 @@ The **example report** (`<workdir>/examples/<slug>/<slug>-examples-report.md`) l
 
 ### HTML report
 
-With `--html` (`validate`, `validate-batch`, `search`), a `<slug>-report.html` is written next to each Markdown report; in package mode also `package-report.html`. It is built from the same data as the Markdown report, so both always show the same findings, but it is laid out for reading on screen, sharing and workshops:
+With `--html` (`validate`, `validate-batch`, `search`), a `<slug>-report.html` is written next to each Markdown report; in package mode also `package-report.html`. It is built from the same data as the Markdown report, so both always show the same findings, but it is laid out for reading on screen and sharing. Texts are kept to short labels:
 
 - a header with profile, package, date, tool and validator version and the EU packages used, and a verdict banner with summary tiles (EU profiles checked, fulfilled, not fulfilled, obligation violations);
-- one card per EU profile with a PASS / FAIL badge, the validator findings (path, issue, how often it was reported), obligation violations and automatically resolved constraints. Each finding has a short "What does this mean?" explanation; for a missing constraint it also says whether the automatic resolution could apply to it;
-- a "How to read this report" box that explains `compliesWithProfile`, PASS / FAIL and the typical findings in plain language;
+- one card per EU profile with a PASS / FAIL badge, the validator findings (path, issue, how often it was reported), obligation violations, automatically resolved constraints and, as information, optional EU type slices that do not apply because the profile does not allow the type ("Not applicable in this profile");
 - the other validator messages, collapsed and grouped by severity with counts;
+- with `--examples`: an "Examples" section on the same page with one collapsed entry per example instance (file, id, OK / FAIL, error and warning counts, the validator issues) and a link to the Markdown examples report;
 - package mode: an overview table of all profiles with their EU counterparts, verdicts and relative links to the per-profile HTML and Markdown reports.
 
-The file is self-contained (no external fonts, scripts or images; the logo is embedded), works offline and without JavaScript, follows the light or dark mode of the system and prints with all sections expanded. A few lines of inline JavaScript add a "show only failing" filter and expand / collapse buttons. All values from profiles and validator output are HTML-escaped. Error reports of profiles that could not be processed are written as HTML too. The example report is Markdown only.
+The file is self-contained (no external fonts, scripts or images; the logo is embedded), works offline and without JavaScript, follows the light or dark mode of the system and prints with all sections expanded. A few lines of inline JavaScript add a "show only failing" filter and expand / collapse buttons. All values from profiles and validator output are HTML-escaped. Error reports of profiles that could not be processed are written as HTML too. The separate examples report stays Markdown only; its results are part of the profile's HTML page.
 
 ### JSON output
 
