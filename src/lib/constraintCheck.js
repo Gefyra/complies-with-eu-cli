@@ -55,6 +55,24 @@ function findConstraintBasePath(euSd, expr) {
 }
 
 /**
+ * Returns the distinct element paths of the EU SD that declare a constraint with
+ * the given expression (snapshot; the differential only when there is no snapshot).
+ *
+ * @param {object} euSd
+ * @param {string} expr
+ * @returns {string[]}
+ */
+function findConstraintPaths(euSd, expr) {
+  const snapshotEls = euSd?.snapshot?.element ?? [];
+  const elements = snapshotEls.length > 0 ? snapshotEls : (euSd?.differential?.element ?? []);
+  const paths = new Set();
+  for (const el of elements) {
+    if ((el.constraint ?? []).some(c => c.expression === expr) && el.path) paths.add(el.path);
+  }
+  return [...paths];
+}
+
+/**
  * Checks whether at least one term of `{ paths, extensionUrls }` is structurally guaranteed
  * by `min >= 1` in the input SD's elements under `basePath`.
  *
@@ -229,6 +247,7 @@ module.exports = {
   loadEuSds,
   parseExistsOrExpression,
   findConstraintBasePath,
+  findConstraintPaths,
   isSatisfiedInInputSnapshot,
   isIgnoredSlicingDetail,
 };

@@ -11,9 +11,23 @@ const {
   mdCell,
   mdCode,
   parseSliceDetail,
+  buildDetailRows,
   exampleErrorCount,
   generateReport,
 } = require('../src/lib/reportGen');
+
+const ELE1 = 'hasValue() or (children().count() > id.count())';
+const NAME_EXPR = 'family.exists() or given.exists()';
+const constraintDetail = (expr) => `slice error: The constraint '${expr}' is defined in the claimed profile, but missing`;
+const euSdFixture = {
+  snapshot: {
+    element: [
+      { path: 'Patient', constraint: [{ expression: ELE1 }] },
+      { path: 'Patient.name', constraint: [{ expression: ELE1 }, { expression: NAME_EXPR }] },
+      { path: 'Patient.gender', constraint: [{ expression: ELE1 }] },
+    ],
+  },
+};
 
 test('mdText escapes HTML-significant characters', () => {
   assert.equal(mdText('<script>a & b</script>'), '&lt;script&gt;a &amp; b&lt;/script&gt;');
@@ -106,4 +120,62 @@ test('generateReport: table cells with "|" stay a single cell', async (t) => {
     assert.equal(unescaped, 3, row);
   }
   assert.ok(md.includes('weird \\| detail &lt;b&gt;'));
+});
+
+test('parseSliceDetail: recovers the path of a missing constraint only when it is unambiguous', () => {
+  assert.deepEqual(parseSliceDetail(constraintDetail(NAME_EXPR), euSdFixture), ['`Patient.name`', `Constraint missing: \`${NAME_EXPR}\``]);
+  // declared on several elements: path stays unknown
+  assert.deepEqual(parseSliceDetail(constraintDetail(ELE1), euSdFixture), ['—', `Constraint missing: \`${ELE1}\``]);
+  // no EU SD: unchanged behaviour
+  assert.deepEqual(parseSliceDetail(constraintDetail(NAME_EXPR)), ['—', `Constraint missing: \`${NAME_EXPR}\``]);
+});
+
+test('buildDetailRows: collapses identical rows in first-seen order and shows a count', () => {
+  const minDetail = "slice error: The min value of '0' on the path Patient.name does not comply with the value '1' from the claimed profile";
+  const rows = buildDetailRows([
+    constraintDetail(ELE1),
+    minDetail,
+    constraintDetail(ELE1),
+    constraintDetail(NAME_EXPR),
+    constraintDetail(ELE1),
+  ]);
+  assert.deepEqual(rows, [
+    ['—', `Constraint missing: \`${ELE1}\` (reported 3×)`],
+    ['`Patient.name`', 'min: is `0`, expected `1`'],
+    ['—', `Constraint missing: \`${NAME_EXPR}\``],
+  ]);
+  assert.deepEqual(buildDetailRows([]), []);
+});
+
+test('generateReport: duplicate detail rows are collapsed, constraint paths recovered from the EU SD', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cwe-report-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const reportPath = path.join(dir, 'r-report.md');
+  const eu = 'http://hl7.eu/fhir/base/StructureDefinition/patient-eu-core';
+
+  await generateReport({
+    canonical: 'http://example.org/StructureDefinition/MyPatient',
+    packageSpec: 'example.pkg@1.0.0',
+    euCanonicals: [eu],
+    euProfiles: [{ url: eu, version: '2.0.1' }],
+    parsed: {
+      summary: { result: 'FAILURE', text: '1 errors' },
+      issues: [{
+        severity: 'error',
+        location: 'StructureDefinition',
+        message: `The profile does not comply with claimed profile '${eu}'`,
+        msgId: 'SD_EXTENSION_COMPLIES_WITH_ERROR',
+        details: [constraintDetail(ELE1), constraintDetail(ELE1), constraintDetail(NAME_EXPR)],
+      }],
+    },
+    reportPath,
+    euSdByCanonical: new Map([[eu, euSdFixture]]),
+  });
+
+  const md = fs.readFileSync(reportPath, 'utf8');
+  const rows = md.split('\n').filter(l => l.includes('Constraint missing'));
+  assert.deepEqual(rows, [
+    `| — | Constraint missing: \`${ELE1}\` (reported 2×) |`,
+    `| \`Patient.name\` | Constraint missing: \`${NAME_EXPR}\` |`,
+  ]);
 });

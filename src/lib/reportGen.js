@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs-extra');
+const { findConstraintPaths } = require('./constraintCheck');
 
 /**
  * Escapes text for use in Markdown/HTML outside code spans (reports are rendered
@@ -53,8 +54,15 @@ function shortName(canonical) {
 
 /**
  * Turns a raw "slice error: ..." detail line into a table row [path, problem].
+ *
+ * The validator's "constraint ... missing" message carries no element path. When
+ * the claimed EU SD is passed and exactly one of its elements declares that
+ * constraint, its path is shown; otherwise the path stays "—".
+ *
+ * @param {string} raw
+ * @param {object} [euSd] - The claimed EU StructureDefinition (optional)
  */
-function parseSliceDetail(raw) {
+function parseSliceDetail(raw, euSd = null) {
   const text = raw.replace(/^slice error:\s*/i, '').trim();
 
   const minMaxMatch = text.match(
@@ -66,7 +74,8 @@ function parseSliceDetail(raw) {
 
   const constraintMatch = text.match(/The constraint '(.+)' is defined in the claimed profile, but missing/);
   if (constraintMatch) {
-    return ['—', `Constraint missing: ${mdCode(constraintMatch[1])}`];
+    const paths = euSd ? findConstraintPaths(euSd, constraintMatch[1]) : [];
+    return [paths.length === 1 ? mdCode(paths[0]) : '—', `Constraint missing: ${mdCode(constraintMatch[1])}`];
   }
 
   const slicingMatch = text.match(/Mismatch in slicing at (\S+):/);
@@ -75,6 +84,28 @@ function parseSliceDetail(raw) {
   }
 
   return ['—', mdText(text)];
+}
+
+/**
+ * Builds the rows of a per-EU-profile details table: identical rows (the
+ * validator repeats e.g. the same constraint text for several elements) are
+ * collapsed into one, in first-seen order, with "(reported N×)" appended.
+ *
+ * @param {string[]} details - Raw detail lines
+ * @param {object}   [euSd]  - The claimed EU StructureDefinition (optional, see parseSliceDetail)
+ * @returns {Array<[string, string]>} [path, problem] rows
+ */
+function buildDetailRows(details, euSd = null) {
+  const rows = new Map(); // "path\0problem" → { path, problem, count }
+  for (const d of details) {
+    const [p, problem] = parseSliceDetail(d, euSd);
+    const key = `${p}\u0000${problem}`;
+    const row = rows.get(key);
+    if (row) row.count++;
+    else rows.set(key, { path: p, problem, count: 1 });
+  }
+  return [...rows.values()].map(({ path: p, problem, count }) =>
+    [p, count > 1 ? `${problem} (reported ${count}×)` : problem]);
 }
 
 /**
@@ -90,6 +121,7 @@ function parseSliceDetail(raw) {
  * @param {Map}      [opts.obligationViolationsByEuCanonical] - Map of euCanonical → violation[]
  * @param {Map}      [opts.filteredNonCompliantMap] - Pre-filtered nonCompliantMap (compliesWithProfile errors)
  * @param {Array}    [opts.autoSatisfiedConstraints] - Auto-resolved constraints: [{ euCanonical, expression, basePath, matchedChild }]
+ * @param {Map}      [opts.euSdByCanonical] - Map of EU canonical (without version) → EU SD, used to recover element paths of missing constraints
  */
 async function generateReport(opts) {
   const { canonical, packageSpec, euCanonicals, parsed, reportPath } = opts;
@@ -104,6 +136,7 @@ async function generateReport(opts) {
     return v ? `${url}|${v}` : url;
   };
   const { issues } = parsed;
+  const euSdByCanonical = opts.euSdByCanonical ?? new Map();
 
   // Split compliesWithProfile errors from everything else
   const cwpErrors = issues.filter(i => i.msgId === 'SD_EXTENSION_COMPLIES_WITH_ERROR');
@@ -175,9 +208,9 @@ async function generateReport(opts) {
       } else {
         lines.push('| Path | Issue |');
         lines.push('|------|-------|');
-        for (const d of details) {
-          const [path, problem] = parseSliceDetail(d);
-          lines.push(`| ${mdCell(path)} | ${mdCell(problem)} |`);
+        const euSd = euSdByCanonical.get(c.split('|')[0]) ?? null;
+        for (const [rowPath, problem] of buildDetailRows(details, euSd)) {
+          lines.push(`| ${mdCell(rowPath)} | ${mdCell(problem)} |`);
         }
       }
       lines.push('');
@@ -429,6 +462,7 @@ module.exports = {
   generateExampleReport,
   appendExampleSummary,
   parseSliceDetail,
+  buildDetailRows,
   mdText,
   mdCell,
   mdCode,

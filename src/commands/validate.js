@@ -35,17 +35,19 @@ const {
 const { loadPackageMapping, savePackageMapping, loadExternalMapping } = require('../lib/mappingFile');
 const { ensureReady, resolveEuPackageDirs } = require('../lib/preflight');
 const { CliError, EXIT, setExitCode, outcomeExitCode } = require('../lib/errors');
+const { makeProgressLogger, makeResultLogger } = require('../lib/output');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /**
- * Progress logger. In --json mode everything goes to stderr so stdout carries
- * only the final JSON document.
+ * Loggers of a command run:
+ * - `log`: progress, always stderr (the same stream as the ora spinners, so lines
+ *   keep their order when stdout and stderr are captured separately).
+ * - `out`: the final human-readable result, stdout (stderr with --json, where
+ *   stdout carries only the JSON document).
  */
-function makeLogger(options) {
-  return options.json
-    ? (...args) => process.stderr.write(args.join(' ') + '\n')
-    : (...args) => console.log(...args);
+function makeLoggers(options) {
+  return { log: makeProgressLogger(), out: makeResultLogger(options) };
 }
 
 /** True when the user can answer prompts (TTY on stdin and stdout, not --json). */
@@ -191,7 +193,7 @@ async function validateExamples({ pkgDir, fhirType, slug, examplesDir, euCanonic
 
 async function runValidate(pkg, canonical, options = {}) {
   applyCommonOptions(options);
-  const log = makeLogger(options);
+  const { log, out } = makeLoggers(options);
 
   log(chalk.bold('\ncomplies-with-eu validate\n'));
   if (!options._preflightDone) await ensureReady();
@@ -353,13 +355,13 @@ async function runValidate(pkg, canonical, options = {}) {
     };
     await emitJson(options, jsonResult, log);
   } else {
-    console.log(chalk.bold.green('\nDone!\n'));
+    out(chalk.bold.green('\nDone!\n'));
     for (const c of compliance) {
-      console.log(`  ${c.pass ? chalk.green('PASS') : chalk.red('FAIL')}  ${c.euCanonical}`);
+      out(`  ${c.pass ? chalk.green('PASS') : chalk.red('FAIL')}  ${c.euCanonical}`);
     }
   }
 
-  log(`\n  Report: ${reportPath}\n`);
+  out(`\n  Report: ${reportPath}\n`);
   setExitCode(outcomeExitCode({ failOnNoncompliant: options.failOnNoncompliant, nonCompliant }));
   return { compliance, pass, reportPath };
 }
@@ -376,7 +378,7 @@ async function runValidate(pkg, canonical, options = {}) {
  */
 async function runValidateBatchFile(jsonFile, options = {}) {
   applyCommonOptions(options);
-  const log = makeLogger(options);
+  const { log, out } = makeLoggers(options);
   log(chalk.bold('\ncomplies-with-eu validate-batch (todo file)\n'));
   await ensureReady();
 
@@ -569,21 +571,21 @@ async function runValidateBatchFile(jsonFile, options = {}) {
   const compliant = results.reports.filter(r => !r.error && r.pass).length;
 
   // ── Final summary ─────────────────────────────────────────────────────────
-  log(chalk.bold('\n══════════════════════════════════════════'));
-  log(chalk.bold('  Batch validation complete'));
-  log(chalk.bold('══════════════════════════════════════════\n'));
-  log(`  Total:          ${tasks.length}`);
-  log(chalk.green(`  Processed:      ${results.success} (${compliant} compliant, ${nonCompliant} non-compliant)`));
+  out(chalk.bold('\n══════════════════════════════════════════'));
+  out(chalk.bold('  Batch validation complete'));
+  out(chalk.bold('══════════════════════════════════════════\n'));
+  out(`  Total:          ${tasks.length}`);
+  out(chalk.green(`  Processed:      ${results.success} (${compliant} compliant, ${nonCompliant} non-compliant)`));
   if (results.failed > 0) {
-    log(chalk.red(`  Errors:         ${results.failed}`));
+    out(chalk.red(`  Errors:         ${results.failed}`));
   }
-  log('');
+  out('');
   for (const r of results.reports) {
     const icon = r.error ? chalk.red('ERROR') : (r.pass ? chalk.green('PASS ') : chalk.yellow('FAIL '));
     const label = r.canonical.split('/').pop().padEnd(60);
-    log(`  ${icon} ${label} → ${r.reportPath}`);
+    out(`  ${icon} ${label} → ${r.reportPath}`);
   }
-  log(`\n  Reports: ${getWorkdir()}\n`);
+  out(`\n  Reports: ${getWorkdir()}\n`);
 
   if (options.json) {
     await emitJson(options, {
@@ -772,7 +774,7 @@ async function acquireLocalServer({ options, igIds, verifyCanonical, log }) {
  */
 async function runValidatePackage(pkgInput, options = {}) {
   applyCommonOptions(options);
-  const log = makeLogger(options);
+  const { log, out } = makeLoggers(options);
 
   log(chalk.bold('\ncomplies-with-eu validate-batch (package mode)\n'));
   await ensureReady();
@@ -860,15 +862,15 @@ async function runValidatePackage(pkgInput, options = {}) {
       }, log);
     }
 
-    log(chalk.bold('\n══════════════════════════════════════════'));
-    log(chalk.bold('  Package Validation Complete'));
-    log(chalk.bold('══════════════════════════════════════════\n'));
-    log(`  Total:          ${summary.total}`);
-    log(chalk.green(`  Compliant:      ${compliant}`));
-    if (nonCompliant > 0) log(chalk.yellow(`  Non-compliant:  ${nonCompliant}`));
-    if (errored > 0) log(chalk.red(`  Errors:         ${errored}`));
-    log(`\n  Package report: ${packageReportPath}`);
-    log(`  Artifacts:      ${pkgWorkdir}\n`);
+    out(chalk.bold('\n══════════════════════════════════════════'));
+    out(chalk.bold('  Package Validation Complete'));
+    out(chalk.bold('══════════════════════════════════════════\n'));
+    out(`  Total:          ${summary.total}`);
+    out(chalk.green(`  Compliant:      ${compliant}`));
+    if (nonCompliant > 0) out(chalk.yellow(`  Non-compliant:  ${nonCompliant}`));
+    if (errored > 0) out(chalk.red(`  Errors:         ${errored}`));
+    out(`\n  Package report: ${packageReportPath}`);
+    out(`  Artifacts:      ${pkgWorkdir}\n`);
 
     setExitCode(outcomeExitCode({ failOnNoncompliant: options.failOnNoncompliant, nonCompliant, errored }));
   };

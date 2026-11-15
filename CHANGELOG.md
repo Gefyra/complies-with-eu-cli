@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Package mode starts the HL7 FHIR Validator with the `server` command instead of the deprecated `-server` option, which removes the warning "The option '-server' is no longer in use".
+- Compliance report: identical rows in the "Non-Compliant Profiles — Details" table (for example the same missing constraint reported for several elements) are collapsed into one row with "(reported N×)". For a missing constraint, the element path is now shown when exactly one element of the EU profile declares that constraint. The `report` field of `--json` contains the same Markdown; the JSON shape is unchanged.
+- Progress output no longer appears out of order when stdout and stderr are redirected or captured separately (for example in Docker or CI): all progress lines of `validate`, `validate-batch` and `search` now go to stderr, the same stream as the spinners. The final result (the "Done!" PASS/FAIL list, the report path and the batch summaries) stays on stdout; with `--json` it goes to stderr as before. Color codes are removed from stderr lines when stderr is not a terminal (unless `FORCE_COLOR` is set).
 
 ## [1.2.0]
 
