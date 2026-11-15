@@ -151,6 +151,9 @@ tr[hidden]{display:none}
 td.num,th.num{text-align:right;white-space:nowrap}
 td.path{min-width:9em}
 td.path code{overflow-wrap:normal;word-break:normal}
+td.nowrap code{white-space:nowrap;overflow-wrap:normal}
+td.issue{min-width:10em}
+th .sub{white-space:normal;text-transform:none;letter-spacing:0;font-weight:400;max-width:14em}
 .dash{color:var(--muted)}
 .note{font-size:13px;color:var(--muted)}
 .panel{border-radius:10px;padding:12px 16px;margin:12px 0 0;font-size:14px}
@@ -357,7 +360,7 @@ function obligationTable(violations, profileTitle) {
     const problems = v.problems.map(k => OBLIGATION_PROBLEM_HTML[k]).join(', ');
     const card = v.notFound || v.cardinality == null ? '<span class="dash">—</span>' : code(v.cardinality);
     const ms = v.notFound ? '<span class="dash">—</span>' : (v.mustSupport ? 'yes' : '<strong>no</strong>');
-    return `<tr><td class="path">${code(v.euElementId)}</td><td>${code(v.obligationCode)}</td><td>${problems}</td><td>${card}</td><td>${ms}</td></tr>`;
+    return `<tr><td class="path">${code(v.euElementId)}</td><td class="nowrap">${code(v.obligationCode)}</td><td class="issue">${problems}</td><td>${card}</td><td>${ms}</td></tr>`;
   }).join('');
   return `<div class="table-wrap"><table><thead><tr><th scope="col">EU element</th><th scope="col">Obligation</th><th scope="col">Issue</th>` +
     `<th scope="col">Cardinality <span class="sub">${esc(profileTitle)}</span></th><th scope="col">MustSupport <span class="sub">${esc(profileTitle)}</span></th></tr></thead><tbody>${rows}</tbody></table></div>`;
