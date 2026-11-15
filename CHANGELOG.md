@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-15
+
+### Migration notes
+
+- **Node.js:** 22.22.2+ (22.x), 24.15.0+ (24.x) or 26+ is required. Node.js 20, 23 and 25 are no longer supported; `doctor` reports an unsupported version.
+- **Verdicts can change from FAIL to PASS:** missing optional EU type slices whose type the profile does not allow are no longer counted as non-compliance (see Changed). They are listed in their own report section.
+- **Ctrl+C in a prompt** prints `Cancelled.` and exits with code `130` (1.3.x ended silently).
+- **Unchanged:** commands, options, the `--json` shape (with `--html`, the new optional fields `htmlReportPath` / `packageHtmlReportPath` are added), exit codes 0/1/2, report locations. `complies-with-eu` keeps working; `cwe` is an additional alias.
+
 ### Added
 
 - Short command alias `cwe`: the package now installs `cwe` next to `complies-with-eu`; both run the same CLI (for example `cwe validate …`, `cwe doctor`).
@@ -20,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Missing optional EU type slices no longer fail a profile when the profile does not allow the type at all (for example `Observation.value[x]:valueBoolean` when only Quantity, CodeableConcept, string, Range and Ratio are allowed). The validator reports these as "no slice found for the discriminator type:$this"; restricting the allowed types is a permitted narrowing. They are listed in a new report section "Optional EU type slices not allowed in this profile". Required slices (min ≥ 1), a derived element that is looser than the EU element, other discriminators and runs with snapshot generation errors still fail.
 - Clearer errors when a package cannot be found or downloaded. `search`, `validate` and `validate-batch` reject an argument that is neither a FHIR package id (at least two dot-separated parts, e.g. `de.gematik.isik@5.1.1`) nor, for `search`, a canonical URL, and explain what is expected (for example `cwe search ISiKPatient`). The output of fhir-pkg-tool is no longer streamed into the progress output; it is written to `~/.complies-with-eu/logs/fhir-pkg-tool.log`. On failure a short message names the cause (package not found in the registry, registry not reachable) without Java stack traces and points to the log. `--verbose` (now also on `init`) streams the tool output as before.
 - The CLI is now an ES module package (`"type": "module"`). Commands, options, exit codes, the `--json` output, report formats and file locations are unchanged.
-- The Markdown reports are now rendered from a shared report model that the HTML report uses as well. Their content is unchanged.
+- The Markdown reports are now rendered from a shared report model that the HTML report uses as well. Their content is unchanged apart from the new type-slice section.
 - Updated dependencies: chalk 4 → 6, ora 5 → 10, inquirer 8 → 14, commander 14 → 15. These versions are ESM-only and are now used directly.
 
 ## [1.3.1] - 2026-11-15
