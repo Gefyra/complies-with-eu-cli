@@ -31,8 +31,9 @@ function isoDate(date = new Date()) {
  *
  * issue.kind is one of:
  * - 'cardinality' `{ bound: 'min'|'max', actual, expected }`
- * - 'constraint'  `{ expression, autoResolvable }`: autoResolvable tells whether the
- *   expression has the `.exists() or …` form the automatic resolution understands
+ * - 'constraint'  `{ expression, autoResolvable, autoCheck }`: autoResolvable tells whether the
+ *   expression has the `.exists() or …` form the automatic resolution understands;
+ *   autoCheck is null here and set by buildReportModel (see constraintAutoCheck)
  * - 'slicing'     `{}`
  * - 'other'       `{ text }`
  *
@@ -63,7 +64,7 @@ function parseSliceIssue(raw, euSd = null) {
     const paths = euSd ? findConstraintPaths(euSd, expression) : [];
     return {
       path: paths.length === 1 ? paths[0] : null,
-      issue: { kind: 'constraint', expression, autoResolvable: parseExistsOrExpression(expression) !== null },
+      issue: { kind: 'constraint', expression, autoResolvable: parseExistsOrExpression(expression) !== null, autoCheck: null },
     };
   }
 
@@ -94,6 +95,25 @@ function buildDetailItems(details, euSd = null) {
     else items.set(key, { path, issue, count: 1 });
   }
   return [...items.values()];
+}
+
+/**
+ * Outcome of the automatic resolution for a constraint finding of one EU profile:
+ * - null:           the expression does not have the `.exists() or …` form (never evaluated)
+ * - 'unsatisfied':  evaluated; the minimum cardinalities do not guarantee it
+ * - 'noEuSd':       not evaluated, the claimed EU profile was not found in the EU packages
+ * - 'noBasePath':   not evaluated, no element of the EU profile declares the constraint
+ * - 'notEvaluated': no outcome recorded (the resolution did not run or failed)
+ *
+ * @param {object} issue       - A 'constraint' issue of parseSliceIssue
+ * @param {string} euCanonical - Key of the EU profile in the nonCompliantMap
+ * @param {Array}  [checks]    - `unresolved` of constraintCheck.evaluateExistsOrConstraints
+ * @returns {string|null}
+ */
+function constraintAutoCheck(issue, euCanonical, checks) {
+  if (!issue.autoResolvable) return null;
+  const hit = (checks ?? []).find(c => c.euCanonical === euCanonical && c.expression === issue.expression);
+  return hit ? hit.reason : 'notEvaluated';
 }
 
 /** Normalises one obligation violation (see obligationCheck.js). */
@@ -141,6 +161,7 @@ function issueItem(issue) {
  * @param {Map}      [opts.filteredNonCompliantMap] - Pre-filtered nonCompliantMap (compliesWithProfile errors)
  * @param {Array}    [opts.autoSatisfiedConstraints] - [{ euCanonical, expression, basePath, matchedChild }];
  *   items with kind 'type-slice' ({ euCanonical, basePath, sliceName, type, matchedChild }) go to typeSlices
+ * @param {Array}    [opts.constraintChecks] - [{ euCanonical, expression, reason }]: why kept `.exists() or …` constraints were not resolved
  * @param {Map}      [opts.euSdByCanonical] - EU canonical (without version) → EU SD
  * @param {object}   [opts.meta]         - Optional run metadata: { tool: { name, version, validatorVersion }, euPackages: [{ packageName, version }] }
  * @param {Date}     [opts.date]         - Report date (default: now)
@@ -204,6 +225,9 @@ function buildReportModel(opts) {
       compliesWithFailed,
       details: compliesWithFailed
         ? buildDetailItems(nonCompliant.get(url) ?? [], euSdByCanonical.get(url.split('|')[0]) ?? null)
+          .map(item => (item.issue.kind === 'constraint'
+            ? { ...item, issue: { ...item.issue, autoCheck: constraintAutoCheck(item.issue, url, opts.constraintChecks) } }
+            : item))
         : [],
       obligationViolations: obligation ? obligation.violations : [],
       autoResolved: autoResolved.filter(a => a.euCanonical === url),

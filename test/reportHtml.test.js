@@ -128,10 +128,69 @@ test('renderHtmlReport: all-pass and no-EU-profile verdicts', () => {
 test('issueHint explains constraints depending on whether auto-resolution applies', () => {
   const notExists = issueHint({ kind: 'constraint', expression: 'value.empty() or x.empty()', autoResolvable: false }, null);
   assert.match(notExists, /different form, so it was not evaluated/);
-  const exists = issueHint({ kind: 'constraint', expression: 'a.exists() or b.exists()', autoResolvable: true }, 'Patient');
-  assert.match(exists, /minimum cardinalities do not guarantee it/);
+  const hint = autoCheck => issueHint({ kind: 'constraint', expression: 'a.exists() or b.exists()', autoResolvable: true, autoCheck }, 'Patient');
+  assert.match(hint('unsatisfied'), /It was evaluated against your profile: none of the alternatives is required there/);
+  assert.match(hint('noEuSd'), /not evaluated: the claimed EU profile was not found in the loaded EU packages/);
+  assert.match(hint('noBasePath'), /not evaluated: no element of the EU profile declares this rule/);
+  // Without an evaluation result, the hint must not claim that cardinalities were compared
+  for (const unknown of ['notEvaluated', null, undefined]) {
+    assert.match(hint(unknown), /no evaluation result is available/);
+    assert.doesNotMatch(hint(unknown), /evaluated against|do not guarantee/);
+  }
   assert.match(issueHint({ kind: 'slicing' }, 'Patient.identifier'), /slices this element/);
   assert.equal(issueHint({ kind: 'other', text: 'x' }, null), null);
+});
+
+test('buildReportModel records the outcome of the automatic resolution per constraint', () => {
+  const NAME_EXPR = 'family.exists() or given.exists()';
+  const ELE1 = 'hasValue() or (children().count() > id.count())';
+  const constraintsOf = m => m.euProfiles[0].details.filter(d => d.issue.kind === 'constraint').map(d => d.issue);
+
+  const evaluated = buildReportModel({
+    ...reportInput('x'),
+    constraintChecks: [{ euCanonical: EU_CORE, expression: NAME_EXPR, reason: 'unsatisfied' }],
+  });
+  assert.deepEqual(constraintsOf(evaluated).map(i => [i.expression, i.autoCheck]), [[ELE1, null], [NAME_EXPR, 'unsatisfied']]);
+  assert.match(renderHtmlReport(evaluated), /It was evaluated against your profile/);
+
+  // No recorded outcome (e.g. the resolution threw): neutral wording, no claim about cardinalities
+  const unknown = buildReportModel(reportInput('x'));
+  assert.equal(constraintsOf(unknown)[1].autoCheck, 'notEvaluated');
+  const html = renderHtmlReport(unknown);
+  assert.match(html, /no evaluation result is available/);
+  assert.doesNotMatch(html, /do not guarantee it|evaluated against your profile/);
+});
+
+test('renderHtmlReport: PASS reached only through auto-resolved constraints is not called "accepted"', () => {
+  const issues = [{
+    severity: 'error', location: 'StructureDefinition', msgId: 'SD_EXTENSION_COMPLIES_WITH_ERROR',
+    message: `The profile does not comply with claimed profile '${EU_IPS}'`,
+    details: ["slice error: The constraint 'a.exists() or b.exists()' is defined in the claimed profile, but missing"],
+  }];
+  const html = renderHtmlReport(buildReportModel({
+    canonical: 'http://x/P', packageSpec: 'p@1', euCanonicals: [EU_IPS], parsed: { summary: { text: '1 error' }, issues },
+    filteredNonCompliantMap: new Map(),
+    autoSatisfiedConstraints: [{ euCanonical: EU_IPS, expression: 'a.exists() or b.exists()', basePath: 'Patient', matchedChild: 'Patient.a (min: 1)' }],
+  }));
+  assert.match(html, /<span class="badge pass">PASS<\/span>/);
+  assert.match(html, /The validator reported only constraints that this tool resolved automatically/);
+  assert.doesNotMatch(html, /the validator accepted the claim and the obligation check/);
+  assert.match(html, /or all of its findings were resolved automatically/);
+});
+
+test('renderHtmlReport: obligation failures use the failure style; layout hooks for small screens', () => {
+  const html = renderHtmlReport(buildReportModel(reportInput('x')));
+  // Patient-eu-lab fails only on obligations: shown like other failures, not as a warning
+  assert.match(html, /<div class="panel fail"><h4>Obligation check/);
+  assert.doesNotMatch(html, /<div class="panel warn">/);
+  assert.match(html, /<div class="tile fail"><span class="num">3<\/span><span class="label">obligation violations/);
+  // element paths keep a readable column width
+  assert.match(html, /<td class="path"><code>Patient\.name<\/code><\/td>/);
+  assert.match(html, /td\.path code\{overflow-wrap:normal;word-break:normal\}/);
+  // two tiles per row on phones; how-to closed in markup, opened by the script on wide screens
+  assert.ok(html.includes('  .tiles{grid-template-columns:repeat(2,1fr)}'));
+  assert.match(html, /<details class="howto" id="howto"><summary>/);
+  assert.match(html, /matchMedia\('\(min-width:641px\)'\)\.matches\)how\.open=true/);
 });
 
 test('generateReport returns the model; HTML and Markdown come from the same model', async (t) => {
@@ -169,6 +228,11 @@ test('package report: Markdown unchanged, HTML with relative links and escaped v
 
   const html = withoutInlineScript(renderPackageHtml(model));
   assert.ok(html.includes('<a href="x_A-report.html">HTML</a>'));
+  // the profile name links to its report too, so the first column always leads there
+  assert.ok(html.includes('<strong><a href="x_A-report.html">A</a></strong>'));
+  // stacked rows on phones keep the report links visible
+  assert.match(html, /<table class="pkg">/);
+  assert.match(html, /table\.pkg td\.eu,table\.pkg td\.links\{grid-column:1 \/ -1\}/);
   assert.ok(html.includes('<a href="x_B-report.md">Markdown</a>'));
   assert.equal(count(html, '<span class="badge pass">PASS</span>'), 1);
   assert.equal(count(html, '<span class="badge fail">FAIL</span>'), 1);
@@ -186,6 +250,9 @@ test('error report: HTML written next to the Markdown only with html: true', asy
   const md2 = await writeErrorReport('s2', 'http://x/P', 'p@1', EVIL, dir, { html: true, meta });
   const html = withoutInlineScript(fs.readFileSync(md2.replace(/\.md$/, '.html'), 'utf8'));
   assert.match(html, /Processing error/);
+  // amber like the ERROR badge on the package page, not the red non-compliance banner
+  assert.match(html, /<section class="verdict error" aria-label="Verdict"><span class="verdict-icon" aria-hidden="true">!<\/span>/);
+  assert.doesNotMatch(html, /verdict fail/);
   assert.doesNotMatch(html, /<script/i);
   assert.doesNotMatch(html, RAW_HANDLER);
   assert.equal(withoutInlineScript(renderHtmlErrorReport({ canonical: 'http://x/P', packageSpec: 'p', message: 'm', date: 'd' })).includes('<script'), false);
@@ -214,4 +281,6 @@ test('postProcessProfile writes <slug>-report.html only with options.html', asyn
   assert.equal(withHtml.htmlReportPath, path.join(dir, 'rich-report.html'));
   assert.match(fs.readFileSync(withHtml.htmlReportPath, 'utf8'), /<section class="verdict fail"/);
   assert.deepEqual(withHtml.compliance, without.compliance);
+  // no EU package dirs: the EU SD was not found, so the constraint was not evaluated, and the HTML says so
+  assert.match(fs.readFileSync(withHtml.htmlReportPath, 'utf8'), /not evaluated: the claimed EU profile was not found in the loaded EU packages/);
 });

@@ -222,16 +222,23 @@ function resolveTypeSliceDetail(detail, { inputSd, euSd, euCanonical, snapshotOk
  * Missing optional type slices whose type the input profile does not allow are
  * resolved as well (see resolveTypeSliceDetail); those items carry kind 'type-slice'.
  *
+ * `unresolved` records, for every `exists() or …` constraint that stays in the map,
+ * why it was not resolved:
+ * - 'unsatisfied': evaluated; the input's minimum cardinalities do not guarantee it
+ * - 'noEuSd':      the claimed EU StructureDefinition was not loaded, so it was not evaluated
+ * - 'noBasePath':  no element of the EU SD declares the constraint, so it was not evaluated
+ *
  * @param {object} opts
  * @param {object}   opts.inputSd              - The input StructureDefinition object
  * @param {Map}      opts.euSdByCanonical       - Map of euCanonical → euSd (pre-loaded)
  * @param {Map}      opts.nonCompliantMap       - Map of euCanonical → detail string[]
  * @param {boolean}  [opts.snapshotOk=true]     - false if the validator reported snapshot generation errors
- * @returns {{ filteredMap: Map, satisfied: Array }}
+ * @returns {{ filteredMap: Map, satisfied: Array, unresolved: Array<{ euCanonical: string, expression: string, reason: string }> }}
  */
 function evaluateExistsOrConstraints({ inputSd, euSdByCanonical, nonCompliantMap, snapshotOk = true }) {
   const filteredMap = new Map();
   const satisfied = [];
+  const unresolved = [];
 
   for (const [euCanonical, details] of nonCompliantMap) {
     // Strip version suffix (e.g. "|2.0.0-recon") for SD lookup
@@ -265,12 +272,14 @@ function evaluateExistsOrConstraints({ inputSd, euSdByCanonical, nonCompliantMap
 
       if (!euSd) {
         remainingDetails.push(detail);
+        unresolved.push({ euCanonical, expression: expr, reason: 'noEuSd' });
         continue;
       }
 
       const basePath = findConstraintBasePath(euSd, expr);
       if (!basePath) {
         remainingDetails.push(detail);
+        unresolved.push({ euCanonical, expression: expr, reason: 'noBasePath' });
         continue;
       }
 
@@ -279,6 +288,7 @@ function evaluateExistsOrConstraints({ inputSd, euSdByCanonical, nonCompliantMap
         satisfied.push({ euCanonical, expression: expr, basePath, matchedChild });
       } else {
         remainingDetails.push(detail);
+        unresolved.push({ euCanonical, expression: expr, reason: 'unsatisfied' });
       }
     }
 
@@ -287,7 +297,7 @@ function evaluateExistsOrConstraints({ inputSd, euSdByCanonical, nonCompliantMap
     }
   }
 
-  return { filteredMap, satisfied };
+  return { filteredMap, satisfied, unresolved };
 }
 
 /**

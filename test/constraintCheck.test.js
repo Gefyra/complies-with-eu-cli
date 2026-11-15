@@ -199,7 +199,7 @@ test('evaluateExistsOrConstraints: resolves satisfied constraints, keeps the res
   ]);
   const euSdByCanonical = new Map([[euCanonical, euSd]]);
 
-  const { filteredMap, satisfied } = evaluateExistsOrConstraints({ inputSd, euSdByCanonical, nonCompliantMap });
+  const { filteredMap, satisfied, unresolved } = evaluateExistsOrConstraints({ inputSd, euSdByCanonical, nonCompliantMap });
   assert.deepEqual(satisfied, [{
     euCanonical: `${euCanonical}|0.1.0`, expression: expr, basePath: 'Patient.name', matchedChild: 'Patient.name.family (min: 1)',
   }]);
@@ -211,6 +211,31 @@ test('evaluateExistsOrConstraints: resolves satisfied constraints, keeps the res
   assert.equal(filteredMap.get('http://unknown/eu').length, 1);
   // Only ignored details: profile counts as compliant
   assert.equal(filteredMap.has('http://only-ignored/eu'), false);
+  // Kept exists()-or constraints record why they were not resolved
+  assert.deepEqual(unresolved, [
+    { euCanonical: `${euCanonical}|0.1.0`, expression: unresolvable, reason: 'unsatisfied' },
+    { euCanonical: 'http://unknown/eu', expression: expr, reason: 'noEuSd' },
+  ]);
+});
+
+test('evaluateExistsOrConstraints: reports unsatisfied and unlocatable exists()-or constraints', () => {
+  const expr = 'family.exists() or given.exists()';
+  const elsewhere = 'telecom.exists() or address.exists()';
+  const euCanonical = 'http://hl7.eu/fhir/base/StructureDefinition/patient-eu-core';
+  const euSd = { snapshot: { element: [{ path: 'Patient.name', constraint: [{ expression: expr }] }] } };
+  const inputSd = sd([{ id: 'Patient.name.family', path: 'Patient.name.family', min: 0 }]);
+  const missing = e => `slice error: The constraint '${e}' is defined in the claimed profile, but missing`;
+  const nonCompliantMap = new Map([[euCanonical, [missing(expr), missing(elsewhere), missing('value.empty() or code.empty()')]]]);
+
+  const { filteredMap, satisfied, unresolved } = evaluateExistsOrConstraints({
+    inputSd, euSdByCanonical: new Map([[euCanonical, euSd]]), nonCompliantMap,
+  });
+  assert.deepEqual(satisfied, []);
+  assert.equal(filteredMap.get(euCanonical).length, 3);
+  assert.deepEqual(unresolved, [
+    { euCanonical, expression: expr, reason: 'unsatisfied' },
+    { euCanonical, expression: elsewhere, reason: 'noBasePath' },
+  ]);
 });
 
 test('findConstraintPaths: distinct element paths declaring an expression', () => {

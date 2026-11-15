@@ -238,6 +238,7 @@ async function postProcessProfile({
   // Evaluate exists()-or constraints
   let filteredNonCompliantMap;
   let autoSatisfiedConstraints;
+  let constraintChecks;
   let euSdByCanonical = new Map();
   try {
     const rawNonCompliantMap = collectNonCompliant(parsed.issues);
@@ -245,12 +246,13 @@ async function postProcessProfile({
     // A snapshot generation error means the validator did not really evaluate the
     // claims; never auto-resolve anything in that case.
     const snapshotOk = !parsed.issues.some(i => /^ERROR_(GENERATING|PROCESSING)_SNAPSHOT$/.test(i.msgId || ''));
-    ({ filteredMap: filteredNonCompliantMap, satisfied: autoSatisfiedConstraints } =
+    ({ filteredMap: filteredNonCompliantMap, satisfied: autoSatisfiedConstraints, unresolved: constraintChecks } =
       evaluateExistsOrConstraints({ inputSd: profile, euSdByCanonical, nonCompliantMap: rawNonCompliantMap, snapshotOk }));
   } catch {
     // non-fatal
     filteredNonCompliantMap = undefined;
     autoSatisfiedConstraints = [];
+    constraintChecks = undefined;
   }
 
   // Generate report
@@ -266,6 +268,7 @@ async function postProcessProfile({
     obligationViolationsByEuCanonical,
     filteredNonCompliantMap,
     autoSatisfiedConstraints,
+    constraintChecks,
     euSdByCanonical,
   });
 

@@ -108,9 +108,11 @@ dl.meta dd{margin:0;overflow-wrap:anywhere}
 .verdict{display:flex;gap:16px;align-items:center;margin:28px 0 20px;padding:20px 24px;border-radius:var(--radius);background:var(--surface);border:1px solid var(--border);border-left:6px solid var(--muted);box-shadow:var(--shadow)}
 .verdict.pass{border-left-color:var(--pass);background:var(--pass-soft)}
 .verdict.fail{border-left-color:var(--accent);background:var(--accent-soft)}
+.verdict.error{border-left-color:var(--warn);background:var(--warn-soft)}
 .verdict-icon{flex:none;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:24px;font-weight:700;color:#fff;background:var(--muted)}
 .verdict.pass .verdict-icon{background:var(--pass)}
 .verdict.fail .verdict-icon{background:var(--accent)}
+.verdict.error .verdict-icon{background:var(--warn);color:var(--on-warn)}
 .verdict-title{font-size:20px;font-weight:700;margin:0}
 .verdict-sub{margin:2px 0 0;color:var(--muted)}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:0 0 8px}
@@ -147,6 +149,8 @@ th{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;le
 tr:last-child td{border-bottom:none}
 tr[hidden]{display:none}
 td.num,th.num{text-align:right;white-space:nowrap}
+td.path{min-width:9em}
+td.path code{overflow-wrap:normal;word-break:normal}
 .dash{color:var(--muted)}
 .note{font-size:13px;color:var(--muted)}
 details.hint{margin-top:4px;font-size:13px;color:var(--muted)}
@@ -155,6 +159,7 @@ details.hint p{margin:4px 0 0}
 .panel{border-radius:10px;padding:12px 16px;margin:12px 0 0;font-size:14px}
 .panel.info{background:var(--info-soft)}
 .panel.warn{background:var(--warn-soft)}
+.panel.fail{background:var(--accent-soft);border-left:4px solid var(--accent)}
 .panel h4{margin:0 0 6px;color:var(--text)}
 .howto{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px 20px;margin:24px 0 0}
 .howto > summary{cursor:pointer;font-weight:600;padding:12px 0}
@@ -188,6 +193,16 @@ footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--border);font-
   dl.meta{grid-template-columns:1fr;gap:0}
   dl.meta dd{margin-bottom:8px}
   header.top .eyebrow{display:none}
+  .tiles{grid-template-columns:repeat(2,1fr)}
+  table.pkg thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  table.pkg,table.pkg tbody{display:block}
+  table.pkg tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:12px 14px;border-bottom:1px solid var(--border)}
+  table.pkg tr:last-child{border-bottom:none}
+  table.pkg td{display:block;padding:0;border:none;min-width:0}
+  table.pkg td.profile{grid-column:1;grid-row:1}
+  table.pkg td.verdict-cell{grid-column:2;grid-row:1}
+  table.pkg td.eu,table.pkg td.links{grid-column:1 / -1}
+  table.pkg tr[hidden]{display:none}
 }
 @media print{
   :root{--bg:#fff;--surface:#fff;--shadow:none}
@@ -205,6 +220,8 @@ footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--border);font-
 // Progressive enhancement only: toggles `hidden`/`open`, never writes markup.
 const SCRIPT = `
 (function(){
+  var how=document.getElementById('howto');
+  if(how&&window.matchMedia&&window.matchMedia('(min-width:641px)').matches)how.open=true;
   var bar=document.getElementById('toolbar');
   if(!bar)return;
   bar.hidden=false;
@@ -223,6 +240,28 @@ const SCRIPT = `
 
 // ── Explanations (plain language, for workshops) ───────────────────────────
 
+const EXISTS_OR_FORM = 'The rule has the ".exists() or …" form that this tool can resolve automatically';
+
+/**
+ * What the automatic resolution did with a constraint finding. Only claims an
+ * evaluation when one actually ran (issue.autoCheck, see reportModel.constraintAutoCheck).
+ */
+function constraintAutoHint(issue) {
+  if (!issue.autoResolvable) {
+    return 'The automatic resolution of this tool only covers rules of the form "a.exists() or b.exists() …" that minimum cardinalities guarantee; this rule has a different form, so it was not evaluated and stays a finding.';
+  }
+  switch (issue.autoCheck) {
+    case 'unsatisfied':
+      return `${EXISTS_OR_FORM}. It was evaluated against your profile: none of the alternatives is required there (minimum cardinality of at least 1, outside of slices), so your profile does not guarantee the rule and it stays a finding.`;
+    case 'noEuSd':
+      return `${EXISTS_OR_FORM}, but it was not evaluated: the claimed EU profile was not found in the loaded EU packages. It stays a finding.`;
+    case 'noBasePath':
+      return `${EXISTS_OR_FORM}, but it was not evaluated: no element of the EU profile declares this rule, so its alternatives could not be located. It stays a finding.`;
+    default:
+      return `${EXISTS_OR_FORM}, but no evaluation result is available (the automatic resolution did not run or failed for this profile). It stays a finding.`;
+  }
+}
+
 /** Short explanation of a detail issue (reportModel.parseSliceIssue kinds). */
 function issueHint(issue, path) {
   switch (issue.kind) {
@@ -234,10 +273,7 @@ function issueHint(issue, path) {
       const where = path
         ? 'The EU profile declares this rule (a FHIRPath invariant) on the element shown; your profile does not declare it.'
         : 'The EU profile declares this rule (a FHIRPath invariant); your profile does not declare it. The validator names no element, and the EU profile declares the rule on several elements (or none could be found), so no single path can be shown.';
-      const auto = issue.autoResolvable
-        ? 'The rule has the ".exists() or …" form that this tool resolves automatically, but your profile\'s minimum cardinalities do not guarantee it.'
-        : 'The automatic resolution of this tool only covers rules of the form "a.exists() or b.exists() …" that minimum cardinalities guarantee; this rule has a different form, so it was not evaluated and stays a finding.';
-      return `${where} ${auto} To fix it, add the constraint to your profile.`;
+      return `${where} ${constraintAutoHint(issue)} To fix it, add the constraint to your profile.`;
     }
     case 'slicing':
       return 'The EU profile slices this element: it splits the repetitions into named parts (slices) with their own rules, identified by a discriminator. Your profile defines no slicing on this element, so the validator cannot check it against the EU slices. Add a slicing with a compatible discriminator to your profile.';
@@ -315,7 +351,7 @@ function toolRows(meta) {
 }
 
 function verdictBanner(state, title, sub) {
-  const icon = state === 'pass' ? '✓' : state === 'fail' ? '✕' : '–';
+  const icon = { pass: '✓', fail: '✕', error: '!' }[state] ?? '–';
   return `<section class="verdict ${state}" aria-label="Verdict"><span class="verdict-icon" aria-hidden="true">${icon}</span>` +
     `<div><p class="verdict-title">${esc(title)}</p><p class="verdict-sub">${esc(sub)}</p></div></section>`;
 }
@@ -349,11 +385,12 @@ function pageEnd() {
 // ── Single-profile report ──────────────────────────────────────────────────
 
 function howToRead() {
-  return `<details class="howto" open><summary>How to read this report</summary><dl>
+  // Closed in the markup so phones reach the findings quickly; the script opens it on wide screens.
+  return `<details class="howto" id="howto"><summary>How to read this report</summary><dl>
 <dt>compliesWithProfile</dt>
 <dd>A copy of your profile gets one <code>compliesWithProfile</code> extension per selected EU profile. The HL7 FHIR Validator then checks each claim: your profile must be at least as strict as the EU profile, so every instance that is valid against your profile is also valid against the EU profile.</dd>
 <dt>PASS and FAIL</dt>
-<dd><strong>PASS</strong>: the validator accepted the claim and the obligation check found nothing. <strong>FAIL</strong>: the validator rejected the claim, or an element the EU profile marks <code>SHALL:able-to-populate</code> is missing, prohibited or not MustSupport in your profile. Each failing card lists the reasons.</dd>
+<dd><strong>PASS</strong>: the validator accepted the claim, or all of its findings were resolved automatically, and the obligation check found nothing. <strong>FAIL</strong>: the validator rejected the claim, or an element the EU profile marks <code>SHALL:able-to-populate</code> is missing, prohibited or not MustSupport in your profile. Each failing card lists the reasons.</dd>
 <dt>Typical findings</dt>
 <dd><em>min/max: is X, expected Y</em>: your profile allows more or fewer repetitions than the EU profile.<br>
 <em>Constraint missing</em>: the EU profile declares a FHIRPath rule (invariant) that your profile does not declare. "—" as path means the rule cannot be pinned to one element.<br>
@@ -370,7 +407,7 @@ function detailsTable(items) {
     const hintHtml = hint
       ? `<details class="hint"><summary>What does this mean?</summary><p>${esc(hint)}</p></details>`
       : '';
-    return `<tr><td>${path ? code(path) : '<span class="dash" title="No element path available">—</span>'}</td>` +
+    return `<tr><td class="path">${path ? code(path) : '<span class="dash" title="No element path available">—</span>'}</td>` +
       `<td>${issueText(issue)}${hintHtml}</td><td class="num">${count}×</td></tr>`;
   }).join('');
   return `<div class="table-wrap"><table><thead><tr><th scope="col">Path</th><th scope="col">Issue</th><th scope="col" class="num">Reported</th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -381,7 +418,7 @@ function obligationTable(violations, profileTitle) {
     const problems = v.problems.map(k => OBLIGATION_PROBLEM_HTML[k]).join(', ');
     const card = v.notFound || v.cardinality == null ? '<span class="dash">—</span>' : code(v.cardinality);
     const ms = v.notFound ? '<span class="dash">—</span>' : (v.mustSupport ? 'yes' : '<strong>no</strong>');
-    return `<tr><td>${code(v.euElementId)}</td><td>${code(v.obligationCode)}</td><td>${problems}</td><td>${card}</td><td>${ms}</td></tr>`;
+    return `<tr><td class="path">${code(v.euElementId)}</td><td>${code(v.obligationCode)}</td><td>${problems}</td><td>${card}</td><td>${ms}</td></tr>`;
   }).join('');
   return `<div class="table-wrap"><table><thead><tr><th scope="col">EU element</th><th scope="col">Obligation</th><th scope="col">Issue</th>` +
     `<th scope="col">Cardinality <span class="sub">${esc(profileTitle)}</span></th><th scope="col">MustSupport <span class="sub">${esc(profileTitle)}</span></th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -389,7 +426,7 @@ function obligationTable(violations, profileTitle) {
 
 function autoResolvedTable(items) {
   const rows = items.map(a =>
-    `<tr><td>${code(a.basePath)}</td><td>${code(a.expression)}</td><td>${esc(a.matchedChild)}</td></tr>`).join('');
+    `<tr><td class="path">${code(a.basePath)}</td><td>${code(a.expression)}</td><td>${esc(a.matchedChild)}</td></tr>`).join('');
   return `<div class="table-wrap"><table><thead><tr><th scope="col">Element</th><th scope="col">Constraint</th><th scope="col">Fulfilled by</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -405,7 +442,7 @@ function euProfileCard(p, model) {
   }
 
   if (p.obligationViolations.length) {
-    parts.push(`<div class="panel warn"><h4>Obligation check (SHALL:able-to-populate)</h4>` +
+    parts.push(`<div class="panel fail"><h4>Obligation check (SHALL:able-to-populate)</h4>` +
       '<p class="note">The HL7 FHIR Validator does not check obligations or MustSupport. This tool checks that every element the EU profile marks <code>SHALL:able-to-populate</code> exists in your profile, is MustSupport and has a maximum cardinality above 0.</p>' +
       `${obligationTable(p.obligationViolations, model.title)}</div>`);
   }
@@ -417,7 +454,9 @@ function euProfileCard(p, model) {
   }
 
   if (p.pass) {
-    parts.unshift('<p class="ok">No deviations found: the validator accepted the claim and the obligation check found no violation.</p>');
+    parts.unshift(p.autoResolved.length
+      ? '<p class="ok">The validator reported only constraints that this tool resolved automatically (see below); no other deviations, and the obligation check found no violation.</p>'
+      : '<p class="ok">No deviations found: the validator accepted the claim and the obligation check found no violation.</p>');
   }
 
   return `<article class="card ${status}" data-status="${status}">` +
@@ -480,7 +519,7 @@ function renderHtmlReport(model) {
       [summary.total, 'EU profiles checked'],
       [summary.compliant, 'fulfilled', 'pass'],
       [summary.nonCompliant, 'not fulfilled', summary.nonCompliant ? 'fail' : ''],
-      [summary.obligationViolations, 'obligation violations', summary.obligationViolations ? 'warn' : ''],
+      [summary.obligationViolations, 'obligation violations', summary.obligationViolations ? 'fail' : ''],
     ]),
     howToRead(),
     toolbar('Show only failing EU profiles'),
@@ -527,12 +566,12 @@ function renderPackageHtml(model) {
     const file = encodeURIComponent(String(p.slug ?? ''));
     const links = `<a href="${file}-report.html">HTML</a> · <a href="${file}-report.md">Markdown</a>`;
     const error = p.error ? `<span class="sub">${esc(p.error)}</span>` : '';
-    return `<tr data-status="${p.pass ? 'pass' : 'fail'}"><td><strong>${esc(p.name)}</strong><span class="sub">${esc(p.canonical)}</span>${error}</td>` +
-      `<td>${chips}</td><td><span class="badge ${status}">${label}</span></td><td>${links}</td></tr>`;
+    return `<tr data-status="${p.pass ? 'pass' : 'fail'}"><td class="profile"><strong><a href="${file}-report.html">${esc(p.name)}</a></strong><span class="sub">${esc(p.canonical)}</span>${error}</td>` +
+      `<td class="eu">${chips}</td><td class="verdict-cell"><span class="badge ${status}">${label}</span></td><td class="links">${links}</td></tr>`;
   }).join('');
 
   const table = model.profiles.length
-    ? `<div class="card"><div class="table-wrap"><table><thead><tr><th scope="col">Profile</th><th scope="col">EU profiles</th><th scope="col">Verdict</th><th scope="col">Report</th></tr></thead><tbody>${rows}</tbody></table></div></div>`
+    ? `<div class="card"><div class="table-wrap"><table class="pkg"><thead><tr><th scope="col">Profile</th><th scope="col">EU profiles</th><th scope="col">Verdict</th><th scope="col">Report</th></tr></thead><tbody>${rows}</tbody></table></div></div>`
     : '<p class="note">No profiles were validated.</p>';
 
   return [
@@ -575,7 +614,7 @@ function renderHtmlErrorReport({ canonical, packageSpec, message, date, meta = n
     `<h1>${esc(title)}</h1>`,
     `<p class="canonical">${code(canonical)}</p>`,
     metaList([['Package', code(packageSpec)], ['Date', esc(date)], ...toolRows(meta)]),
-    verdictBanner('fail', 'Processing error', 'This profile could not be validated. Check the inputs and make sure the package can be downloaded.'),
+    verdictBanner('error', 'Processing error', 'This profile could not be validated. Check the inputs and make sure the package can be downloaded.'),
     `<div class="card"><div class="card-body"><p class="issue-msg">${esc(message)}</p></div></div>`,
     footer(meta, date),
     '</main>',
