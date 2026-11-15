@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Obligation check: `SHOULD:able-to-populate` violations were already evaluated (and make the EU profile fail, like `SHALL`), but were listed under the heading "SHALL:able-to-populate". The section is now called "Obligation Check (able-to-populate)" and lists SHALL and SHOULD violations under separate headings, in the Markdown and the HTML report.
 - Piping the output into a program that stops reading early (for example `cwe --help | head -3`) no longer crashes with an unhandled `EPIPE` stack trace; the CLI ends quietly.
 
 ## [2.0.0] - 2026-11-15

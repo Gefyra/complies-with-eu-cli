@@ -335,6 +335,24 @@ function buildPackageModel({ packageSpec, profiles, total, meta = null, date }) 
   };
 }
 
+/**
+ * Groups obligation violations by strength (SHALL first, then SHOULD, then
+ * anything else) for rendering under separate headings (pure, for tests).
+ * @param {Array<{strength?: string}>} violations
+ * @returns {Array<{ strength: string, violations: Array }>}
+ */
+function groupObligationsByStrength(violations) {
+  const order = ['SHALL', 'SHOULD'];
+  const groups = new Map();
+  for (const v of violations) {
+    const key = v.strength || String(v.obligationCode || '').split(':')[0] || 'SHALL';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(v);
+  }
+  const rank = (k) => (order.includes(k) ? order.indexOf(k) : order.length);
+  return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0])).map(([strength, vs]) => ({ strength, violations: vs }));
+}
+
 export {
   SEVERITIES,
   shortName,
@@ -346,4 +364,5 @@ export {
   buildExamplesModel,
   exampleHasNoResult,
   exampleErrorCount,
+  groupObligationsByStrength,
 };

@@ -363,3 +363,26 @@ test('addExamplesToHtml rewrites the profile HTML with the examples section and 
   await addExamplesToHtml(html, 'Patient', null);
   assert.match(fs.readFileSync(htmlPath, 'utf8'), /No example instances found\./);
 });
+
+test('obligations: SHOULD violations get their own heading after SHALL (Markdown and HTML) and still fail', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cwe-obl-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const input = reportInput(path.join(dir, 'r-report.md'));
+  const [[euCanonical, violations]] = [...input.obligationViolationsByEuCanonical];
+  input.obligationViolationsByEuCanonical.set(euCanonical, [
+    { euElementId: 'Patient.telecom', obligationCode: 'SHOULD:able-to-populate', matchType: 'exact', maxIsZero: false, missingMustSupport: true, inputCardinality: '0..*', inputMustSupport: false },
+    ...violations,
+  ]);
+  await generateReport(input);
+  const md = fs.readFileSync(input.reportPath, 'utf8');
+  assert.match(md, /## ⚠️ Obligation Check \(able-to-populate\)/);
+  assert.doesNotMatch(md, /Obligation Check \(SHALL:able-to-populate\)/);
+  const shall = md.indexOf('#### SHALL:able-to-populate');
+  const should = md.indexOf('#### SHOULD:able-to-populate');
+  assert.ok(shall > 0 && should > shall, 'SHALL table first, then SHOULD');
+  assert.ok(md.indexOf('Patient.telecom') > should, 'SHOULD row is under the SHOULD heading');
+
+  const html = renderHtmlReport(buildReportModel(input));
+  assert.match(html, /<h4>Obligation check \(able-to-populate\)<\/h4>/);
+  assert.ok(html.indexOf('<h5>SHALL:able-to-populate</h5>') < html.indexOf('<h5>SHOULD:able-to-populate</h5>'));
+});

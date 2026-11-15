@@ -20,9 +20,9 @@ function parseObligationCode(codeValue) {
 }
 
 /**
- * Strength ordering: SHALL > SHOULD > MAY
- * Returns true if the given strength is "at least SHALL" (exact match for now,
- * since SHALL is the highest).
+ * Strength ordering: SHALL > SHOULD > MAY.
+ * SHALL and SHOULD are checked: without MustSupport an element can fulfil
+ * neither, so violations of both make the EU profile fail. MAY is ignored.
  */
 function isRelevantStrength(strength) {
   return strength === 'SHALL' || strength === 'SHOULD';
@@ -122,7 +122,7 @@ function findInputElement(snapshotMap, euElementId, euElementPath) {
 }
 
 /**
- * Checks all SHALL:able-to-populate obligations in an EU profile's differential
+ * Checks all SHALL/SHOULD:able-to-populate obligations in an EU profile's differential
  * against the corresponding elements in the input profile's snapshot.
  *
  * Returns an array of violation objects.

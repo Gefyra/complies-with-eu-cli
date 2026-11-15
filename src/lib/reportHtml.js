@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { SEVERITIES } from './reportModel.js';
+import { SEVERITIES, groupObligationsByStrength } from './reportModel.js';
 
 /**
  * HTML renderer for the report model (see reportModel.js).
@@ -389,9 +389,12 @@ function euProfileCard(p, model) {
   }
 
   if (p.obligationViolations.length) {
-    parts.push(`<div class="panel fail"><h4>Obligation check (SHALL:able-to-populate)</h4>` +
+    const groups = groupObligationsByStrength(p.obligationViolations)
+      .map(g => `<h5>${esc(g.strength)}:able-to-populate</h5>${obligationTable(g.violations, model.title)}`)
+      .join('');
+    parts.push('<div class="panel fail"><h4>Obligation check (able-to-populate)</h4>' +
       '<p class="note">Checked by this tool, not by the HL7 FHIR Validator.</p>' +
-      `${obligationTable(p.obligationViolations, model.title)}</div>`);
+      `${groups}</div>`);
   }
 
   if (p.autoResolved.length) {

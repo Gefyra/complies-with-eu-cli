@@ -10,6 +10,7 @@ import {
   buildPackageModel,
   exampleHasNoResult,
   exampleErrorCount,
+  groupObligationsByStrength,
 } from './reportModel.js';
 
 /**
@@ -150,13 +151,13 @@ function renderMarkdownReport(model) {
 
   // ── Section 3: Obligation / MustSupport Violations ────────────────────────
   if (model.obligations.length > 0) {
-    lines.push(`## ⚠️ Obligation Check (SHALL:able-to-populate)`);
+    lines.push(`## ⚠️ Obligation Check (able-to-populate)`);
     lines.push('');
     lines.push(
       `The FHIR Java Validator does **not** check obligations or MustSupport. ` +
       `The following evaluation therefore manually checks whether elements with \`SHALL:able-to-populate\` ` +
-      `in the EU profile are at least marked as **MustSupport** in the validated profile ` +
-      `and have a max cardinality > 0.`
+      `or \`SHOULD:able-to-populate\` in the EU profile are at least marked as **MustSupport** in the validated profile ` +
+      `and have a max cardinality > 0. Violations of both make the EU profile fail.`
     );
     lines.push('');
     lines.push(`**${summary.obligationViolations} violation(s)** found across ${model.obligations.length} EU profile(s).`);
@@ -168,15 +169,19 @@ function renderMarkdownReport(model) {
       lines.push(mdCode(o.euCanonical));
       lines.push('');
       const inputLabel = mdCell(mdText(model.title));
-      lines.push(`| EU Element | Obligation | Issue | Cardinality (${inputLabel}) | MustSupport (${inputLabel}) |`);
-      lines.push('|------------|-----------|-------|:-----------:|:-------------------:|');
-      for (const v of o.violations) {
-        const problems = v.problems.map(k => OBLIGATION_PROBLEM_MD[k]).join(', ');
-        const maxCell = v.notFound ? '—' : (v.cardinality ?? '—');
-        const msCell = v.notFound ? '—' : (v.mustSupport ? '✅' : '❌');
-        lines.push(`| ${mdCell(mdCode(v.euElementId))} | ${mdCell(mdCode(v.obligationCode))} | ${mdCell(problems)} | ${mdCell(maxCell)} | ${msCell} |`);
+      for (const group of groupObligationsByStrength(o.violations)) {
+        lines.push(`#### ${group.strength}:able-to-populate`);
+        lines.push('');
+        lines.push(`| EU Element | Obligation | Issue | Cardinality (${inputLabel}) | MustSupport (${inputLabel}) |`);
+        lines.push('|------------|-----------|-------|:-----------:|:-------------------:|');
+        for (const v of group.violations) {
+          const problems = v.problems.map(k => OBLIGATION_PROBLEM_MD[k]).join(', ');
+          const maxCell = v.notFound ? '—' : (v.cardinality ?? '—');
+          const msCell = v.notFound ? '—' : (v.mustSupport ? '✅' : '❌');
+          lines.push(`| ${mdCell(mdCode(v.euElementId))} | ${mdCell(mdCode(v.obligationCode))} | ${mdCell(problems)} | ${mdCell(maxCell)} | ${msCell} |`);
+        }
+        lines.push('');
       }
-      lines.push('');
     }
   }
 
