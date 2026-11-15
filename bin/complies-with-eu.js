@@ -17,12 +17,13 @@ Getting started:
                                   and the EU packages (needs Java 21+)
   2. complies-with-eu validate hl7.fhir.uv.ips@2.0.0 \\
        http://hl7.org/fhir/uv/ips/StructureDefinition/Patient-uv-ips --all-counterparts
-  3. Open the Markdown report printed at the end of the run.
+  3. Open the Markdown report printed at the end of the run (add --html for an HTML report).
   Check your setup with: complies-with-eu doctor
   Short alias: every command also works as "cwe", e.g. cwe doctor
 
 Reports:
   Written to <workdir>/<profile>-report.md (package mode: <workdir>/<package>/).
+  With --html, a self-contained <profile>-report.html is written next to it.
   Default workdir: ~/.complies-with-eu/workdir (override: --workdir or COMPLIES_WITH_EU_WORKDIR).
 
 Validator output:
@@ -78,6 +79,7 @@ function buildProgram() {
     .option('--eu-profiles <profiles>', 'Comma-separated EU profile canonical URLs (skips interactive selection)')
     .option('--all-counterparts', 'Use all EU profiles of the same resource type (no prompt)')
     .option('--examples', 'Also validate all example instances of the matching FHIR type in the package')
+    .option('--html', 'Also write a self-contained HTML report next to the Markdown report')
     .option('--json', 'Output result as JSON on stdout (machine-readable, for CI use; progress goes to stderr)')
     .option('--output <file>', 'Write JSON output to file instead of stdout (requires --json)')
     .option('--fail-on-noncompliant', 'Exit with code 1 if a selected EU profile is not fulfilled')
@@ -103,6 +105,7 @@ without a terminal (CI, --json) one of the two flags is required.`)
       "  - Otherwise: package mode ('name[@version|#version]'): validates all profiles in the package that have EU counterparts."
     )
     .option('--examples', 'Also validate all example instances of the matching FHIR types')
+    .option('--html', 'Also write self-contained HTML reports next to the Markdown reports (package mode: also package-report.html)')
     .option('--json', 'Output result as JSON on stdout (machine-readable, for CI use; progress goes to stderr)')
     .option('--output <file>', 'Write JSON output to file instead of stdout (requires --json)')
     .option('--fail-on-noncompliant', 'Exit with code 1 if a selected EU profile is not fulfilled (2 if a profile could not be validated)')
@@ -134,6 +137,7 @@ without a terminal (CI, --json) one of the two flags is required.`)
     .option('--eu-profiles <profiles>', 'Passed to validate: comma-separated EU profile canonical URLs')
     .option('--all-counterparts', 'Passed to validate: use all EU profiles of the same type')
     .option('--examples', 'Passed to validate: also validate example instances')
+    .option('--html', 'Passed to validate: also write a self-contained HTML report')
     .option('--json', 'Passed to validate: machine-readable output')
     .option('--output <file>', 'Passed to validate: write JSON output to file (requires --json)')
     .option('--fail-on-noncompliant', 'Passed to validate: exit with code 1 if a selected EU profile is not fulfilled')
@@ -150,7 +154,7 @@ without a terminal (CI, --json) one of the two flags is required.`)
 
   program
     .command('clean')
-    .description('Remove workdir artifacts (modified JSONs, logs) but keep Markdown reports and mapping.json')
+    .description('Remove workdir artifacts (modified JSONs, logs) but keep Markdown and HTML reports and mapping.json')
     .option('--workdir <dir>', 'Workdir to clean (default: $COMPLIES_WITH_EU_WORKDIR or <home>/workdir)')
     .action(async (options) => (await import('../src/commands/clean.js')).runClean(options));
 

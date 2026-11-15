@@ -31,6 +31,7 @@
     "cwe": "bin/complies-with-eu.js"
   },
   "files": [
+    "assets/gefyra-logo.png",
     "bin/",
     "src/",
     "eu-packages.json",

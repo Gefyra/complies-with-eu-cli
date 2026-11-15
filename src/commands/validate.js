@@ -21,7 +21,9 @@ import {
   validateBatchViaServer,
   describeBatchFailure,
 } from '../lib/javaValidatorServer.js';
-import { generateExampleReport, appendExampleSummary, mdCell, mdText } from '../lib/reportGen.js';
+import { generateExampleReport, appendExampleSummary, renderPackageMarkdown } from '../lib/reportGen.js';
+import { buildPackageModel } from '../lib/reportModel.js';
+import { renderPackageHtml } from '../lib/reportHtml.js';
 import {
   parsePackageSpec,
   checkPackageArgument,
@@ -32,6 +34,8 @@ import {
   summarizeExamples,
   describeEuPackages,
   toolInfo,
+  htmlPathFor,
+  reportMeta,
 } from '../lib/validateCore.js';
 import { loadPackageMapping, savePackageMapping, loadExternalMapping } from '../lib/mappingFile.js';
 import { ensureReady, resolveEuPackageDirs } from '../lib/preflight.js';
@@ -302,9 +306,9 @@ async function runValidate(pkg, canonical, options = {}) {
 
   // 8. Post-process: obligation check, constraint evaluation, report generation
   spinner = ora('Post-processing validator results...').start();
-  let compliance, reportPath, obligationViolationsByEuCanonical;
+  let compliance, reportPath, htmlReportPath, obligationViolationsByEuCanonical;
   try {
-    ({ compliance, reportPath, obligationViolationsByEuCanonical } = await postProcessProfile({
+    ({ compliance, reportPath, htmlReportPath, obligationViolationsByEuCanonical } = await postProcessProfile({
       pkgDir,
       profile,
       canonical,
@@ -364,6 +368,7 @@ async function runValidate(pkg, canonical, options = {}) {
       validator: { mode, summary: parsed.summary ? parsed.summary.text : null },
       euPackages: await describeEuPackages(euPackageDirs),
       ...(options.examples ? { examples } : {}),
+      ...(htmlReportPath ? { htmlReportPath } : {}),
     };
     await emitJson(options, jsonResult, log);
   } else {
@@ -373,9 +378,10 @@ async function runValidate(pkg, canonical, options = {}) {
     }
   }
 
-  out(`\n  Report: ${reportPath}\n`);
+  out(`\n  Report: ${reportPath}${htmlReportPath ? '' : '\n'}`);
+  if (htmlReportPath) out(`  HTML report: ${htmlReportPath}\n`);
   setExitCode(outcomeExitCode({ failOnNoncompliant: options.failOnNoncompliant, nonCompliant }));
-  return { compliance, pass, reportPath };
+  return { compliance, pass, reportPath, htmlReportPath };
 }
 
 // ── validate-batch (todo file) ─────────────────────────────────────────────
@@ -432,14 +438,16 @@ async function runValidateBatchFile(jsonFile, options = {}) {
   const pkgDirCache = new Map();
 
   const results = { success: 0, failed: 0, reports: [] };
+  const meta = options.html ? reportMeta(await describeEuPackages(euPackageDirs)) : null;
 
   const fail = async (task, message) => {
     const { canonical, packageSpec, slug } = task;
-    const reportPath = await writeErrorReport(slug, canonical, packageSpec, message);
+    const reportPath = await writeErrorReport(slug, canonical, packageSpec, message, null, { html: !!options.html, meta });
+    const htmlReportPath = options.html ? htmlPathFor(reportPath) : null;
     log(chalk.red(`  ${message}`));
     log(chalk.red(`  Error report: ${reportPath}`));
     results.failed++;
-    results.reports.push({ canonical, packageSpec, reportPath, error: true, errorMessage: message, pass: false, compliance: [] });
+    results.reports.push({ canonical, packageSpec, reportPath, htmlReportPath, error: true, errorMessage: message, pass: false, compliance: [] });
   };
 
   for (let i = 0; i < tasks.length; i++) {
@@ -534,9 +542,9 @@ async function runValidateBatchFile(jsonFile, options = {}) {
     }
 
     // ── Step 6: Post-process (obligation, constraints, report) ────────────
-    let reportPath, compliance;
+    let reportPath, htmlReportPath, compliance;
     try {
-      ({ reportPath, compliance } = await postProcessProfile({
+      ({ reportPath, htmlReportPath, compliance } = await postProcessProfile({
         pkgDir,
         profile,
         canonical,
@@ -549,12 +557,13 @@ async function runValidateBatchFile(jsonFile, options = {}) {
         options,
       }));
       log(chalk.green(`  Report: ${reportPath}`));
+      if (htmlReportPath) log(chalk.green(`  HTML report: ${htmlReportPath}`));
     } catch (err) {
       await fail(task, `Post-processing failed: ${err.message}`);
       continue;
     }
 
-    const entry = { canonical, packageSpec, reportPath, error: false, pass: compliance.every(c => c.pass), compliance };
+    const entry = { canonical, packageSpec, reportPath, htmlReportPath, error: false, pass: compliance.every(c => c.pass), compliance };
     results.success++;
     results.reports.push(entry);
 
@@ -621,6 +630,7 @@ async function runValidateBatchFile(jsonFile, options = {}) {
         compliance: r.compliance || [],
         ...(r.error ? { error: r.errorMessage } : {}),
         ...(r.examples ? { examples: r.examples } : {}),
+        ...(r.htmlReportPath ? { htmlReportPath: r.htmlReportPath } : {}),
       })),
       tool: toolInfo(),
       euPackages: await describeEuPackages(euPackageDirs),
@@ -822,32 +832,22 @@ async function runValidatePackage(pkgInput, options = {}) {
   );
 
   const summary = { total: 0, success: 0, failed: 0, profiles: [] };
+  const meta = options.html ? reportMeta(euPackagesInfo) : null;
 
   const finish = async () => {
     const errored = summary.failed;
     const compliant = summary.profiles.filter(p => !p.error && p.pass).length;
     const nonCompliant = summary.profiles.filter(p => !p.error && !p.pass).length;
 
-    // Package-level report
+    // Package-level report (Markdown, and HTML with --html, from the same model)
     const packageReportPath = path.join(pkgWorkdir, 'package-report.md');
-    const reportLines = [
-      `# Package Compliance Report: ${mdText(packageSpec)}`,
-      '',
-      `**Date:** ${new Date().toISOString().slice(0, 10)}`,
-      `**Profiles:** ${summary.total} total, ${compliant} compliant, ${nonCompliant} non-compliant, ${errored} with errors`,
-      '',
-      '## Profiles',
-      '',
-      '| Profile | Status | Report |',
-      '|---------|--------|--------|',
-    ];
-    for (const p of summary.profiles) {
-      const status = p.error ? '⚠️ error' : (p.pass ? '✅' : '❌');
-      const name = mdCell(mdText(p.canonical.split('/').pop()));
-      reportLines.push(`| ${name} | ${status} | [Report](${p.slug}-report.md) |`);
+    const packageModel = buildPackageModel({ packageSpec, profiles: summary.profiles, total: summary.total, meta });
+    await fs.outputFile(packageReportPath, renderPackageMarkdown(packageModel), 'utf8');
+    let packageHtmlReportPath = null;
+    if (options.html) {
+      packageHtmlReportPath = htmlPathFor(packageReportPath);
+      await fs.outputFile(packageHtmlReportPath, renderPackageHtml(packageModel), 'utf8');
     }
-    reportLines.push('');
-    await fs.outputFile(packageReportPath, reportLines.join('\n'), 'utf8');
 
     if (options.json) {
       await emitJson(options, {
@@ -869,11 +869,13 @@ async function runValidatePackage(pkgInput, options = {}) {
           compliance: p.compliance || [],
           ...(p.error ? { error: p.error } : {}),
           ...(p.examples ? { examples: p.examples } : {}),
+          ...(options.html ? { htmlReportPath: path.relative(pkgWorkdir, htmlPathFor(p.reportPath)) } : {}),
         })),
         pass: errored === 0 && nonCompliant === 0,
         packageReportPath: path.relative(pkgWorkdir, packageReportPath),
         tool: toolInfo(),
         euPackages: euPackagesInfo,
+        ...(packageHtmlReportPath ? { packageHtmlReportPath: path.relative(pkgWorkdir, packageHtmlReportPath) } : {}),
       }, log);
     }
 
@@ -885,6 +887,7 @@ async function runValidatePackage(pkgInput, options = {}) {
     if (nonCompliant > 0) out(chalk.yellow(`  Non-compliant:  ${nonCompliant}`));
     if (errored > 0) out(chalk.red(`  Errors:         ${errored}`));
     out(`\n  Package report: ${packageReportPath}`);
+    if (packageHtmlReportPath) out(`  HTML report:    ${packageHtmlReportPath}`);
     out(`  Artifacts:      ${pkgWorkdir}\n`);
 
     setExitCode(outcomeExitCode({ failOnNoncompliant: options.failOnNoncompliant, nonCompliant, errored }));
@@ -916,7 +919,7 @@ async function runValidatePackage(pkgInput, options = {}) {
   summary.total = profilesToValidate.length;
 
   const recordError = async (canonical, slug, message) => {
-    const reportPath = await writeErrorReport(slug, canonical, packageSpec, message, pkgWorkdir);
+    const reportPath = await writeErrorReport(slug, canonical, packageSpec, message, pkgWorkdir, { html: !!options.html, meta });
     summary.failed++;
     summary.profiles.push({ canonical, slug, pass: false, reportPath, error: message });
     log(chalk.red(`  ❌ ${canonical.split('/').pop()}: ${message}`));

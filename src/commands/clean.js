@@ -3,9 +3,9 @@ import fs from 'fs-extra';
 import chalk from 'chalk';
 import { getWorkdir, setWorkdir } from '../lib/config.js';
 
-/** Files that `clean` keeps: Markdown reports and package-mode mapping.json. */
+/** Files that `clean` keeps: Markdown and HTML reports and package-mode mapping.json. */
 function isKeptFile(filePath) {
-  return filePath.endsWith('-report.md') || path.basename(filePath) === 'mapping.json';
+  return filePath.endsWith('-report.md') || filePath.endsWith('-report.html') || path.basename(filePath) === 'mapping.json';
 }
 
 /**

@@ -56,10 +56,26 @@ test('flags used by CI integrations stay available', () => {
   const search = run(['search', '--help']);
   assert.equal(search.code, 0, search.stderr);
   assert.ok(search.stdout.includes('--verbose'), 'search --verbose');
+  const clean = run(['clean', '--help']);
+  assert.match(clean.stdout, /HTML\s+reports/);
   const index = run(['build-index', '--help']);
   assert.equal(index.code, 0, index.stderr);
   assert.ok(index.stdout.includes('--output'));
   assert.equal(run(['init', '--help']).code, 0);
+});
+
+test('--html is available on validate, validate-batch and search', () => {
+  for (const cmd of ['validate', 'validate-batch', 'search']) {
+    const r = run([cmd, '--help']);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /--html\b/, `${cmd} --html`);
+  }
+});
+
+test('search passes --html through to validate', async () => {
+  const { validateOptions } = await import('../src/commands/search.js');
+  assert.equal(validateOptions({ html: true }).html, true);
+  assert.equal(validateOptions({}).html, undefined);
 });
 
 test('usage errors exit 2 with a message on stderr and nothing on stdout', () => {

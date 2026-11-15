@@ -18,6 +18,7 @@ function validateOptions(options, extra = {}) {
     debug: options.debug,
     verbose: options.verbose,
     examples: options.examples,
+    html: options.html,
     json: options.json,
     output: options.output,
     workdir: options.workdir,
@@ -230,4 +231,8 @@ async function runSearch(pkg, options = {}) {
   await runValidate(pkg, canonical, validateOptions(options, { pkgDir }));
 }
 
-export { runSearch };
+export {
+  runSearch,
+  // exported for tests
+  validateOptions,
+};
