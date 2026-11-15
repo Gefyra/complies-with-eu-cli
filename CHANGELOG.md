@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Short command alias `cwe`: the package now installs `cwe` next to `complies-with-eu`; both run the same CLI (for example `cwe validate …`, `cwe doctor`).
+- `--html` for `validate`, `validate-batch` (both modes) and `search` (passed through to `validate`): writes a self-contained HTML report `<slug>-report.html` next to the Markdown report, and in package mode also `package-report.html` with an overview of all profiles, their EU counterparts and verdicts and relative links to the profile reports. The report has a verdict banner, summary tiles, one card per EU profile with PASS / FAIL badge and findings, short plain-language explanations of each finding and a "How to read this report" box, which makes it suitable for sharing and workshops. It works offline and without JavaScript, supports light and dark mode and prints with all sections expanded. Error reports are written as HTML too. The HTML path is printed at the end of the run; with `--json` it is added as the new optional fields `htmlReportPath` (and `packageHtmlReportPath` in package mode). Existing fields are unchanged.
+- `clean` keeps `*-report.html` files like `*-report.md`.
 
 ### Changed
 
@@ -18,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Missing optional EU type slices no longer fail a profile when the profile does not allow the type at all (for example `Observation.value[x]:valueBoolean` when only Quantity, CodeableConcept, string, Range and Ratio are allowed). The validator reports these as "no slice found for the discriminator type:$this"; restricting the allowed types is a permitted narrowing. They are listed in a new report section "Optional EU type slices not allowed in this profile". Required slices (min ≥ 1), a derived element that is looser than the EU element, other discriminators and runs with snapshot generation errors still fail.
 - Clearer errors when a package cannot be found or downloaded. `search`, `validate` and `validate-batch` reject an argument that is neither a FHIR package id (at least two dot-separated parts, e.g. `de.gematik.isik@5.1.1`) nor, for `search`, a canonical URL, and explain what is expected (for example `cwe search ISiKPatient`). The output of fhir-pkg-tool is no longer streamed into the progress output; it is written to `~/.complies-with-eu/logs/fhir-pkg-tool.log`. On failure a short message names the cause (package not found in the registry, registry not reachable) without Java stack traces and points to the log. `--verbose` (now also on `init`) streams the tool output as before.
 - The CLI is now an ES module package (`"type": "module"`). Commands, options, exit codes, the `--json` output, report formats and file locations are unchanged.
+- The Markdown reports are now rendered from a shared report model that the HTML report uses as well. Their content is unchanged.
 - Updated dependencies: chalk 4 → 6, ora 5 → 10, inquirer 8 → 14, commander 14 → 15. These versions are ESM-only and are now used directly.
 
 ## [1.3.1] - 2026-11-15
