@@ -53,10 +53,7 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
       # Authentication: npm trusted publishing via OIDC (configured on npmjs.com for
-      # Gefyra/complies-with-eu-cli, workflow release.yml). Provenance is attached
-      # automatically. NPM_TOKEN is only a fallback while trusted publishing is
-      # being set up; remove the env block and the repository secret afterwards.
+      # Gefyra/complies-with-eu-cli, workflow release.yml). No npm token is used;
+      # provenance is attached automatically.
       - name: Publish
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
