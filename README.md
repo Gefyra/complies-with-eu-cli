@@ -404,7 +404,7 @@ With `--json`, stdout contains only the JSON document (progress goes to stderr);
   "package": "hl7.fhir.uv.ips@2.0.0",
   "canonical": "http://hl7.org/fhir/uv/ips/StructureDefinition/Patient-uv-ips",
   "reportPath": "/home/me/.complies-with-eu/workdir/hl7_org_fhir_uv_ips_StructureDefinition_Patient-uv-ips-report.md",
-  "tool": { "name": "@gefyra/complies-with-eu", "version": "1.3.0", "validatorVersion": "7.0.5" },
+  "tool": { "name": "@gefyra/complies-with-eu", "version": "1.3.1", "validatorVersion": "7.0.5" },
   "validator": { "mode": "local", "summary": "…" },
   "euPackages": [ { "packageName": "hl7.fhir.eu.base", "version": "2.0.1" } ]
 }
@@ -499,9 +499,9 @@ jobs:
           path: |
             ~/.complies-with-eu/tools
             ~/.fhir/packages
-          key: complies-with-eu-${{ runner.os }}-1.3.0
+          key: complies-with-eu-${{ runner.os }}-1.3.1
 
-      - run: npm install -g @gefyra/complies-with-eu@1.3.0
+      - run: npm install -g @gefyra/complies-with-eu@1.3.1
       - run: complies-with-eu init
 
       - name: Validate
