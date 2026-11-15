@@ -4,12 +4,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { buildReportModel, buildPackageModel } from '../src/lib/reportModel.js';
+import { buildReportModel, buildPackageModel, buildExamplesModel } from '../src/lib/reportModel.js';
 import {
   esc,
   safeHref,
   logoDataUri,
-  issueHint,
   renderHtmlReport,
   renderPackageHtml,
   renderHtmlErrorReport,
@@ -73,13 +72,16 @@ test('renderHtmlReport: verdict, tiles and one card per EU profile', () => {
   assert.match(html, /<span class="num">3<\/span><span class="label">obligation violations/);
   // collapsed duplicate row, counts, auto-resolved info, obligations, metadata
   assert.ok(html.includes('<td class="num">2×</td>'));
-  assert.match(html, /Automatically resolved \(information\)/);
+  assert.match(html, /Automatically resolved constraints/);
   assert.match(html, /Element not found in profile/);
   assert.match(html, /HL7 FHIR Validator 6\.7\.4/);
   assert.match(html, /hl7\.fhir\.eu\.base#0\.1\.0/);
   // other validation results: collapsed by default, grouped with counts
   assert.match(html, /<details class="other"><summary>4 messages: 1 fatal, 1 error, 1 warning, 1 information<\/summary>/);
-  assert.match(html, /How to read this report/);
+  // minimal texts: no explanation boxes
+  assert.doesNotMatch(html, /How to read this report|What does this mean\?|class="howto"|class="hint"/);
+  // without --examples there is no examples section
+  assert.doesNotMatch(html, /id="examples"/);
   // self-contained: no external resources
   assert.doesNotMatch(html, /<link\b|<script\s+src|@import|url\(http/i);
 });
@@ -91,6 +93,9 @@ test('renderHtmlReport: untrusted values are escaped everywhere', () => {
   input.parsed.issues.push({ severity: 'warning', location: EVIL, message: EVIL, msgId: EVIL });
   input.parsed.issues[0].details.push(`slice error: The constraint '${EVIL}' is defined in the claimed profile, but missing`);
   input.autoSatisfiedConstraints[0].matchedChild = EVIL;
+  input.autoSatisfiedConstraints[1].basePath = EVIL;
+  input.autoSatisfiedConstraints[1].type = EVIL;
+  input.autoSatisfiedConstraints[1].matchedChild = EVIL;
   const html = withoutInlineScript(renderHtmlReport(buildReportModel({
     ...input,
     meta: { tool: { name: EVIL, version: EVIL, validatorVersion: EVIL }, euPackages: [{ packageName: EVIL, version: EVIL }] },
@@ -125,43 +130,7 @@ test('renderHtmlReport: all-pass and no-EU-profile verdicts', () => {
   assert.match(none, /<section class="verdict none"/);
 });
 
-test('issueHint explains constraints depending on whether auto-resolution applies', () => {
-  const notExists = issueHint({ kind: 'constraint', expression: 'value.empty() or x.empty()', autoResolvable: false }, null);
-  assert.match(notExists, /different form, so it was not evaluated/);
-  const hint = autoCheck => issueHint({ kind: 'constraint', expression: 'a.exists() or b.exists()', autoResolvable: true, autoCheck }, 'Patient');
-  assert.match(hint('unsatisfied'), /It was evaluated against your profile: none of the alternatives is required there/);
-  assert.match(hint('noEuSd'), /not evaluated: the claimed EU profile was not found in the loaded EU packages/);
-  assert.match(hint('noBasePath'), /not evaluated: no element of the EU profile declares this rule/);
-  // Without an evaluation result, the hint must not claim that cardinalities were compared
-  for (const unknown of ['notEvaluated', null, undefined]) {
-    assert.match(hint(unknown), /no evaluation result is available/);
-    assert.doesNotMatch(hint(unknown), /evaluated against|do not guarantee/);
-  }
-  assert.match(issueHint({ kind: 'slicing' }, 'Patient.identifier'), /slices this element/);
-  assert.equal(issueHint({ kind: 'other', text: 'x' }, null), null);
-});
-
-test('buildReportModel records the outcome of the automatic resolution per constraint', () => {
-  const NAME_EXPR = 'family.exists() or given.exists()';
-  const ELE1 = 'hasValue() or (children().count() > id.count())';
-  const constraintsOf = m => m.euProfiles[0].details.filter(d => d.issue.kind === 'constraint').map(d => d.issue);
-
-  const evaluated = buildReportModel({
-    ...reportInput('x'),
-    constraintChecks: [{ euCanonical: EU_CORE, expression: NAME_EXPR, reason: 'unsatisfied' }],
-  });
-  assert.deepEqual(constraintsOf(evaluated).map(i => [i.expression, i.autoCheck]), [[ELE1, null], [NAME_EXPR, 'unsatisfied']]);
-  assert.match(renderHtmlReport(evaluated), /It was evaluated against your profile/);
-
-  // No recorded outcome (e.g. the resolution threw): neutral wording, no claim about cardinalities
-  const unknown = buildReportModel(reportInput('x'));
-  assert.equal(constraintsOf(unknown)[1].autoCheck, 'notEvaluated');
-  const html = renderHtmlReport(unknown);
-  assert.match(html, /no evaluation result is available/);
-  assert.doesNotMatch(html, /do not guarantee it|evaluated against your profile/);
-});
-
-test('renderHtmlReport: PASS reached only through auto-resolved constraints is not called "accepted"', () => {
+test('renderHtmlReport: PASS reached only through auto-resolved constraints says "No remaining findings"', () => {
   const issues = [{
     severity: 'error', location: 'StructureDefinition', msgId: 'SD_EXTENSION_COMPLIES_WITH_ERROR',
     message: `The profile does not comply with claimed profile '${EU_IPS}'`,
@@ -173,9 +142,8 @@ test('renderHtmlReport: PASS reached only through auto-resolved constraints is n
     autoSatisfiedConstraints: [{ euCanonical: EU_IPS, expression: 'a.exists() or b.exists()', basePath: 'Patient', matchedChild: 'Patient.a (min: 1)' }],
   }));
   assert.match(html, /<span class="badge pass">PASS<\/span>/);
-  assert.match(html, /The validator reported only constraints that this tool resolved automatically/);
-  assert.doesNotMatch(html, /the validator accepted the claim and the obligation check/);
-  assert.match(html, /or all of its findings were resolved automatically/);
+  assert.match(html, /<p class="ok">No remaining findings\.<\/p>/);
+  assert.doesNotMatch(html, /accepted the claim/);
 });
 
 test('renderHtmlReport: obligation failures use the failure style; layout hooks for small screens', () => {
@@ -187,10 +155,101 @@ test('renderHtmlReport: obligation failures use the failure style; layout hooks 
   // element paths keep a readable column width
   assert.match(html, /<td class="path"><code>Patient\.name<\/code><\/td>/);
   assert.match(html, /td\.path code\{overflow-wrap:normal;word-break:normal\}/);
-  // two tiles per row on phones; how-to closed in markup, opened by the script on wide screens
+  // two tiles per row on phones
   assert.ok(html.includes('  .tiles{grid-template-columns:repeat(2,1fr)}'));
-  assert.match(html, /<details class="howto" id="howto"><summary>/);
-  assert.match(html, /matchMedia\('\(min-width:641px\)'\)\.matches\)how\.open=true/);
+  // no leftovers of the removed explanation boxes
+  assert.doesNotMatch(html, /howto|details\.hint|matchMedia/);
+});
+
+test('renderHtmlReport: optional EU type slices are information on their EU profile card, never failures', () => {
+  const model = buildReportModel(reportInput('x'));
+  assert.equal(model.typeSlices.length, 1);
+  assert.equal(model.autoResolved.length, 1, 'type slices are not listed as resolved constraints');
+  const core = model.euProfiles.find(p => p.canonical === EU_CORE);
+  assert.equal(core.typeSlices[0].type, 'boolean');
+  assert.deepEqual(model.euProfiles.filter(p => p.canonical !== EU_CORE).map(p => p.typeSlices.length), [0, 0]);
+
+  const html = renderHtmlReport(model);
+  const coreCard = html.slice(html.indexOf(`<code>${esc(`${EU_CORE}|2.0.1`)}</code>`));
+  const panel = coreCard.slice(coreCard.indexOf('<h4>Not applicable in this profile</h4>'));
+  assert.ok(coreCard.indexOf('<h4>Not applicable in this profile</h4>') > 0);
+  assert.match(html, /<div class="panel info"><h4>Not applicable in this profile<\/h4>/);
+  assert.match(panel, /<li><code>Patient\.deceased\[x\]:deceasedBoolean<\/code> <code>boolean<\/code><span class="sub">type boolean is not allowed here \(allowed: dateTime \| &lt;x&gt;\); the EU slice is optional \(0\.\.1\)<\/span><\/li>/);
+  // not in the failure table of the card
+  assert.doesNotMatch(html, /<td[^>]*>[^<]*deceasedBoolean/);
+  assert.equal(count(html, 'Not applicable in this profile'), 1);
+
+  // a profile whose only validator findings are type slices passes
+  const pass = renderHtmlReport(buildReportModel({
+    canonical: 'http://x/P', packageSpec: 'p@1', euCanonicals: [EU_IPS], parsed: { summary: { text: '1 error' }, issues: [] },
+    filteredNonCompliantMap: new Map(),
+    autoSatisfiedConstraints: [{ kind: 'type-slice', euCanonical: EU_IPS, basePath: 'Observation.value[x]:valueBoolean', sliceName: 'valueBoolean', type: 'boolean', expression: 'e', matchedChild: 'm' }],
+  }));
+  assert.match(pass, /<section class="verdict pass"/);
+  assert.match(pass, /<p class="ok">No remaining findings\.<\/p>/);
+  assert.doesNotMatch(pass, /Automatically resolved constraints/);
+});
+
+const EXAMPLE_RESULTS = [
+  { fileName: 'Patient-ok.json', resourceId: 'ok', parsed: { summary: { result: 'SUCCESS', text: '0 errors, 1 warning' }, issues: [{ severity: 'warning', location: 'Patient.name', message: 'w1' }] } },
+  { fileName: 'Patient-bad.json', resourceId: 'bad', parsed: { summary: { result: 'FAILURE', text: '2 errors' }, issues: [
+    { severity: 'error', location: 'Patient.gender', line: 3, col: 4, msgId: 'X', message: 'e1' },
+    { severity: 'fatal', location: 'Patient', message: 'e2' },
+  ] } },
+  { fileName: 'Patient-none.json', resourceId: null, parsed: { summary: null, issues: [], error: 'timeout' } },
+];
+
+test('buildExamplesModel: counts, a missing result is a failure', () => {
+  const m = buildExamplesModel({ fhirType: 'Patient', results: EXAMPLE_RESULTS, reportPath: '/w/examples/s/s-examples-report.md' });
+  assert.equal(m.total, 3);
+  assert.equal(m.passed, 1);
+  assert.deepEqual(m.items.map(e => [e.fileName, e.pass, e.errors, e.warnings, e.noResult]), [
+    ['Patient-ok.json', true, 0, 1, false],
+    ['Patient-bad.json', false, 2, 0, false],
+    ['Patient-none.json', false, 1, 0, true],
+  ]);
+  assert.equal(m.items[1].bySeverity.fatal.length, 1);
+  assert.equal(m.items[2].error, 'timeout');
+  assert.deepEqual(buildExamplesModel({ fhirType: 'Patient', results: [] }).total, 0);
+});
+
+test('renderHtmlReport: examples section on the same page, issues collapsed', () => {
+  const model = buildReportModel(reportInput('x'));
+  model.examples = buildExamplesModel({ fhirType: 'Patient', results: EXAMPLE_RESULTS, reportPath: 'r.md' });
+  model.examplesLink = 'examples/s/s-examples-report.md';
+  const html = renderHtmlReport(model);
+  assert.match(html, /<h2 id="examples">Examples<\/h2>/);
+  assert.match(html, /<strong>1 of 3<\/strong> without errors\. <a href="examples\/s\/s-examples-report\.md">Markdown<\/a>/);
+  assert.equal(count(html, '<details class="example '), 3);
+  // collapsed: no example entry is open in the markup
+  assert.doesNotMatch(html, /<details class="example [a-z]+" data-status="[a-z]+" open/);
+  assert.match(html, /<details class="example pass" data-status="pass"><summary><span class="badge pass">OK<\/span><span class="ex-name"><code>Patient-ok\.json<\/code> <span class="sub">id: ok<\/span><\/span><span class="ex-counts">0 errors, 1 warning<\/span>/);
+  assert.match(html, /<span class="badge fail">FAIL<\/span><span class="ex-name"><code>Patient-bad\.json<\/code>/);
+  assert.match(html, /2 errors, 0 warnings/);
+  assert.match(html, /No validator result: timeout/);
+  assert.match(html, /\(line 3, col 4\) <code>X<\/code>/);
+  // the filter also covers examples; examples come after the EU profiles
+  assert.match(html, /Show only failing EU profiles and examples/);
+  assert.ok(html.indexOf('id="examples"') > html.indexOf('id="eu-profiles"'));
+
+  const none = buildReportModel(reportInput('x'));
+  none.examples = buildExamplesModel({ fhirType: 'Patient', results: [] });
+  assert.match(renderHtmlReport(none), /<h2 id="examples">Examples<\/h2>.*No example instances found\./s);
+});
+
+test('renderHtmlReport: example values are escaped', () => {
+  const model = buildReportModel(reportInput('x'));
+  model.examples = buildExamplesModel({
+    fhirType: EVIL,
+    results: [{ fileName: EVIL, resourceId: EVIL, parsed: { summary: { result: 'FAILURE', text: EVIL }, error: EVIL, issues: [{ severity: 'error', location: EVIL, msgId: EVIL, message: EVIL }] } }],
+  });
+  model.examplesLink = 'javascript:alert(1)" onclick="x';
+  const html = withoutInlineScript(renderHtmlReport(model));
+  assert.doesNotMatch(html, /<script/i);
+  assert.doesNotMatch(html, /<img src=x/i);
+  assert.doesNotMatch(html, RAW_HANDLER);
+  assert.doesNotMatch(html, /" onclick="|href="javascript:/i);
+  assert.ok(count(html, '&lt;script&gt;alert(1)&lt;/script&gt;') >= 6);
 });
 
 test('generateReport returns the model; HTML and Markdown come from the same model', async (t) => {
@@ -281,6 +340,26 @@ test('postProcessProfile writes <slug>-report.html only with options.html', asyn
   assert.equal(withHtml.htmlReportPath, path.join(dir, 'rich-report.html'));
   assert.match(fs.readFileSync(withHtml.htmlReportPath, 'utf8'), /<section class="verdict fail"/);
   assert.deepEqual(withHtml.compliance, without.compliance);
-  // no EU package dirs: the EU SD was not found, so the constraint was not evaluated, and the HTML says so
-  assert.match(fs.readFileSync(withHtml.htmlReportPath, 'utf8'), /not evaluated: the claimed EU profile was not found in the loaded EU packages/);
+  // the model is returned so that --examples can add its section to the same page
+  assert.equal(withHtml.reportModel.kind, 'profile');
+  assert.ok(withHtml.reportModel.meta);
+});
+
+test('addExamplesToHtml rewrites the profile HTML with the examples section and a relative Markdown link', async (t) => {
+  const { addExamplesToHtml } = await import('../src/commands/validate.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cwe-ex-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const htmlPath = path.join(dir, 's-report.html');
+  const html = { model: buildReportModel(reportInput('x')), path: htmlPath };
+  await addExamplesToHtml(html, 'Patient', {
+    exampleResults: EXAMPLE_RESULTS,
+    exReportPath: path.join(dir, 'examples', 's', 's-examples-report.md'),
+  });
+  const written = fs.readFileSync(htmlPath, 'utf8');
+  assert.match(written, /<h2 id="examples">Examples<\/h2>/);
+  assert.match(written, /<a href="examples\/s\/s-examples-report\.md">Markdown<\/a>/);
+  assert.equal(count(written, '<details class="example '), 3);
+
+  await addExamplesToHtml(html, 'Patient', null);
+  assert.match(fs.readFileSync(htmlPath, 'utf8'), /No example instances found\./);
 });

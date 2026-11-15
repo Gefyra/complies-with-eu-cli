@@ -8,6 +8,8 @@ import {
   buildDetailItems,
   buildReportModel,
   buildPackageModel,
+  exampleHasNoResult,
+  exampleErrorCount,
 } from './reportModel.js';
 
 /**
@@ -36,18 +38,6 @@ function mdCode(s) {
   const fence = '`'.repeat(longest + 1);
   const pad = str.startsWith('`') || str.endsWith('`') ? ' ' : '';
   return fence + pad + str + pad + fence;
-}
-
-/** True when an example has no usable validator result (must be reported as a failure). */
-function exampleHasNoResult(parsed) {
-  return !parsed || !parsed.summary || !!parsed.error;
-}
-
-/** Number of errors of an example; a missing result counts as one error. */
-function exampleErrorCount(parsed) {
-  const issues = (parsed && parsed.issues) || [];
-  const errors = issues.filter(i => i.severity === 'fatal' || i.severity === 'error').length;
-  return exampleHasNoResult(parsed) ? Math.max(errors, 1) : errors;
 }
 
 /** Markdown of a structured detail issue (see reportModel.parseSliceIssue). */

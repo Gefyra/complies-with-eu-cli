@@ -204,7 +204,7 @@ function collectNonCompliant(issues) {
  * @param {string} params.slug - Filename slug
  * @param {string} params.reportDir - Directory for reports (defaults to getWorkdir())
  * @param {object} params.options - Additional options (e.g. { debug, html })
- * @returns {Promise<{compliance: Array, reportPath: string, htmlReportPath: string|null, obligationViolationsByEuCanonical: Map, filteredNonCompliantMap: Map, autoSatisfiedConstraints: Array}>}
+ * @returns {Promise<{compliance: Array, reportPath: string, htmlReportPath: string|null, reportModel: object, obligationViolationsByEuCanonical: Map, filteredNonCompliantMap: Map, autoSatisfiedConstraints: Array}>}
  */
 async function postProcessProfile({
   pkgDir,
@@ -238,7 +238,6 @@ async function postProcessProfile({
   // Evaluate exists()-or constraints
   let filteredNonCompliantMap;
   let autoSatisfiedConstraints;
-  let constraintChecks;
   let euSdByCanonical = new Map();
   try {
     const rawNonCompliantMap = collectNonCompliant(parsed.issues);
@@ -246,13 +245,12 @@ async function postProcessProfile({
     // A snapshot generation error means the validator did not really evaluate the
     // claims; never auto-resolve anything in that case.
     const snapshotOk = !parsed.issues.some(i => /^ERROR_(GENERATING|PROCESSING)_SNAPSHOT$/.test(i.msgId || ''));
-    ({ filteredMap: filteredNonCompliantMap, satisfied: autoSatisfiedConstraints, unresolved: constraintChecks } =
+    ({ filteredMap: filteredNonCompliantMap, satisfied: autoSatisfiedConstraints } =
       evaluateExistsOrConstraints({ inputSd: profile, euSdByCanonical, nonCompliantMap: rawNonCompliantMap, snapshotOk }));
   } catch {
     // non-fatal
     filteredNonCompliantMap = undefined;
     autoSatisfiedConstraints = [];
-    constraintChecks = undefined;
   }
 
   // Generate report
@@ -268,7 +266,6 @@ async function postProcessProfile({
     obligationViolationsByEuCanonical,
     filteredNonCompliantMap,
     autoSatisfiedConstraints,
-    constraintChecks,
     euSdByCanonical,
   });
 
@@ -290,6 +287,7 @@ async function postProcessProfile({
     compliance,
     reportPath,
     htmlReportPath,
+    reportModel: model,
     obligationViolationsByEuCanonical,
     filteredNonCompliantMap,
     autoSatisfiedConstraints,
@@ -310,7 +308,7 @@ async function postProcessProfile({
  * @param {boolean} [params.verbose] - Stream the full validator output
  * @param {Function} [params.log] - Progress logger (default: stderr)
  * @param {Function} [params.runBatch] - runValidatorBatch replacement (tests)
- * @returns {Promise<{exampleResults: Array, exReportPath: string}|null>}
+ * @returns {Promise<{exampleResults: Array<{fileName: string, resourceId: string|null, parsed: object}>, exReportPath: string}|null>}
  */
 async function runExamplesForProfile({
   pkgDir,
@@ -341,12 +339,12 @@ async function runExamplesForProfile({
   await fs.emptyDir(examplesDir);
 
   // Write modified examples
-  const exampleFileNames = [];
+  const exampleFiles = [];
   for (const { json, fileName } of examples) {
     const modified = addMetaProfileClaims(json, euCanonicals);
     const outPath = path.join(examplesDir, fileName);
     await fs.writeJson(outPath, modified, { spaces: 2 });
-    exampleFileNames.push(fileName);
+    exampleFiles.push({ fileName, resourceId: json && typeof json.id === 'string' ? json.id : null });
   }
 
   // Validate batch
@@ -364,9 +362,10 @@ async function runExamplesForProfile({
 
   // Map results; a missing result is kept as summary:null and reported as failed
   const resultMap = new Map(batchResults.map(r => [r.fileName, r]));
-  const exampleResults = exampleFileNames.map(fn => ({
-    fileName: fn,
-    parsed: resultMap.get(fn) ?? { summary: null, issues: [], error: batchError || 'No validator result for this file' },
+  const exampleResults = exampleFiles.map(({ fileName, resourceId }) => ({
+    fileName,
+    resourceId,
+    parsed: resultMap.get(fileName) ?? { summary: null, issues: [], error: batchError || 'No validator result for this file' },
   }));
 
   const exReportPath = path.join(examplesDir, `${slug}-examples-report.md`);

@@ -153,19 +153,23 @@ td.path{min-width:9em}
 td.path code{overflow-wrap:normal;word-break:normal}
 .dash{color:var(--muted)}
 .note{font-size:13px;color:var(--muted)}
-details.hint{margin-top:4px;font-size:13px;color:var(--muted)}
-details.hint summary{cursor:pointer;color:var(--info);width:max-content;max-width:100%}
-details.hint p{margin:4px 0 0}
 .panel{border-radius:10px;padding:12px 16px;margin:12px 0 0;font-size:14px}
 .panel.info{background:var(--info-soft)}
 .panel.warn{background:var(--warn-soft)}
 .panel.fail{background:var(--accent-soft);border-left:4px solid var(--accent)}
 .panel h4{margin:0 0 6px;color:var(--text)}
-.howto{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px 20px;margin:24px 0 0}
-.howto > summary{cursor:pointer;font-weight:600;padding:12px 0}
-.howto dl{margin:0 0 12px}
-.howto dt{font-weight:600;margin-top:12px}
-.howto dd{margin:2px 0 0}
+ul.na{list-style:none;margin:6px 0 0;padding:0}
+ul.na li{padding:6px 0;border-top:1px dashed var(--border)}
+ul.na li:first-child{border-top:none}
+ul.na .sub{margin-top:2px}
+details.example{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin:0 0 10px;padding:0 20px;box-shadow:var(--shadow)}
+details.example[hidden]{display:none}
+details.example.fail{border-left:4px solid var(--accent)}
+details.example.pass{border-left:4px solid var(--pass)}
+details.example > summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;padding:12px 0}
+details.example > summary .ex-name{font-weight:600;overflow-wrap:anywhere;min-width:0}
+details.example > summary .ex-counts{margin-left:auto;font-size:13px;color:var(--muted);white-space:nowrap}
+details.example .ex-body{padding:0 0 12px}
 details.other{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:0 20px}
 details.other > summary{cursor:pointer;font-weight:600;padding:14px 0}
 details.sev{border-top:1px solid var(--border)}
@@ -189,7 +193,8 @@ footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--border);font-
 @media (max-width:640px){
   h1{font-size:22px;margin-top:24px}
   .verdict{padding:16px}
-  .card-head,.card-body{padding-left:14px;padding-right:14px}
+  .card-head,.card-body,details.example{padding-left:14px;padding-right:14px}
+  details.example > summary .ex-counts{margin-left:0;flex-basis:100%}
   dl.meta{grid-template-columns:1fr;gap:0}
   dl.meta dd{margin-bottom:8px}
   header.top .eyebrow{display:none}
@@ -209,7 +214,7 @@ footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--border);font-
   body{font-size:12px}
   .toolbar{display:none !important}
   .card,.tile,.verdict{box-shadow:none;break-inside:avoid}
-  .card[hidden],tr[hidden]{display:block}
+  .card[hidden],details.example[hidden]{display:block}
   tr[hidden]{display:table-row}
   details > summary{list-style:none}
   details::details-content{content-visibility:visible;display:block}
@@ -220,8 +225,6 @@ footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--border);font-
 // Progressive enhancement only: toggles `hidden`/`open`, never writes markup.
 const SCRIPT = `
 (function(){
-  var how=document.getElementById('howto');
-  if(how&&window.matchMedia&&window.matchMedia('(min-width:641px)').matches)how.open=true;
   var bar=document.getElementById('toolbar');
   if(!bar)return;
   bar.hidden=false;
@@ -238,49 +241,7 @@ const SCRIPT = `
 })();
 `;
 
-// ── Explanations (plain language, for workshops) ───────────────────────────
-
-const EXISTS_OR_FORM = 'The rule has the ".exists() or …" form that this tool can resolve automatically';
-
-/**
- * What the automatic resolution did with a constraint finding. Only claims an
- * evaluation when one actually ran (issue.autoCheck, see reportModel.constraintAutoCheck).
- */
-function constraintAutoHint(issue) {
-  if (!issue.autoResolvable) {
-    return 'The automatic resolution of this tool only covers rules of the form "a.exists() or b.exists() …" that minimum cardinalities guarantee; this rule has a different form, so it was not evaluated and stays a finding.';
-  }
-  switch (issue.autoCheck) {
-    case 'unsatisfied':
-      return `${EXISTS_OR_FORM}. It was evaluated against your profile: none of the alternatives is required there (minimum cardinality of at least 1, outside of slices), so your profile does not guarantee the rule and it stays a finding.`;
-    case 'noEuSd':
-      return `${EXISTS_OR_FORM}, but it was not evaluated: the claimed EU profile was not found in the loaded EU packages. It stays a finding.`;
-    case 'noBasePath':
-      return `${EXISTS_OR_FORM}, but it was not evaluated: no element of the EU profile declares this rule, so its alternatives could not be located. It stays a finding.`;
-    default:
-      return `${EXISTS_OR_FORM}, but no evaluation result is available (the automatic resolution did not run or failed for this profile). It stays a finding.`;
-  }
-}
-
-/** Short explanation of a detail issue (reportModel.parseSliceIssue kinds). */
-function issueHint(issue, path) {
-  switch (issue.kind) {
-    case 'cardinality':
-      return issue.bound === 'min'
-        ? `The EU profile sets min ${issue.expected} for this element, your profile min ${issue.actual}. A complying profile must be at least as strict: its minimum must not be lower.`
-        : `The EU profile sets max ${issue.expected} for this element, your profile max ${issue.actual}. A complying profile must be at least as strict: its maximum must not be higher.`;
-    case 'constraint': {
-      const where = path
-        ? 'The EU profile declares this rule (a FHIRPath invariant) on the element shown; your profile does not declare it.'
-        : 'The EU profile declares this rule (a FHIRPath invariant); your profile does not declare it. The validator names no element, and the EU profile declares the rule on several elements (or none could be found), so no single path can be shown.';
-      return `${where} ${constraintAutoHint(issue)} To fix it, add the constraint to your profile.`;
-    }
-    case 'slicing':
-      return 'The EU profile slices this element: it splits the repetitions into named parts (slices) with their own rules, identified by a discriminator. Your profile defines no slicing on this element, so the validator cannot check it against the EU slices. Add a slicing with a compatible discriminator to your profile.';
-    default:
-      return null;
-  }
-}
+// ── Findings ───────────────────────────────────────────────────────────────
 
 /** HTML of a detail issue's main text (mirrors the Markdown wording). */
 function issueText(issue) {
@@ -384,32 +345,10 @@ function pageEnd() {
 
 // ── Single-profile report ──────────────────────────────────────────────────
 
-function howToRead() {
-  // Closed in the markup so phones reach the findings quickly; the script opens it on wide screens.
-  return `<details class="howto" id="howto"><summary>How to read this report</summary><dl>
-<dt>compliesWithProfile</dt>
-<dd>A copy of your profile gets one <code>compliesWithProfile</code> extension per selected EU profile. The HL7 FHIR Validator then checks each claim: your profile must be at least as strict as the EU profile, so every instance that is valid against your profile is also valid against the EU profile.</dd>
-<dt>PASS and FAIL</dt>
-<dd><strong>PASS</strong>: the validator accepted the claim, or all of its findings were resolved automatically, and the obligation check found nothing. <strong>FAIL</strong>: the validator rejected the claim, or an element the EU profile marks <code>SHALL:able-to-populate</code> is missing, prohibited or not MustSupport in your profile. Each failing card lists the reasons.</dd>
-<dt>Typical findings</dt>
-<dd><em>min/max: is X, expected Y</em>: your profile allows more or fewer repetitions than the EU profile.<br>
-<em>Constraint missing</em>: the EU profile declares a FHIRPath rule (invariant) that your profile does not declare. "—" as path means the rule cannot be pinned to one element.<br>
-<em>No slicing found, target profile expects slicing</em>: the EU profile splits the element into named slices; your profile has no slicing there.<br>
-Select <em>What does this mean?</em> under a finding for an explanation.</dd>
-<dt>Automatically resolved and other results</dt>
-<dd>Constraints of the form <code>a.exists() or b.exists()</code> that your minimum cardinalities guarantee are resolved automatically and shown as information. "Other validation results" are validator messages that are not about compliesWithProfile; they do not change the verdict.</dd>
-</dl></details>`;
-}
-
 function detailsTable(items) {
-  const rows = items.map(({ path, issue, count }) => {
-    const hint = issueHint(issue, path);
-    const hintHtml = hint
-      ? `<details class="hint"><summary>What does this mean?</summary><p>${esc(hint)}</p></details>`
-      : '';
-    return `<tr><td class="path">${path ? code(path) : '<span class="dash" title="No element path available">—</span>'}</td>` +
-      `<td>${issueText(issue)}${hintHtml}</td><td class="num">${count}×</td></tr>`;
-  }).join('');
+  const rows = items.map(({ path, issue, count }) =>
+    `<tr><td class="path">${path ? code(path) : '<span class="dash" title="No element path available">—</span>'}</td>` +
+    `<td>${issueText(issue)}</td><td class="num">${count}×</td></tr>`).join('');
   return `<div class="table-wrap"><table><thead><tr><th scope="col">Path</th><th scope="col">Issue</th><th scope="col" class="num">Reported</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -430,6 +369,11 @@ function autoResolvedTable(items) {
   return `<div class="table-wrap"><table><thead><tr><th scope="col">Element</th><th scope="col">Constraint</th><th scope="col">Fulfilled by</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+function typeSliceList(items) {
+  return `<ul class="na">${items.map(t =>
+    `<li>${code(t.basePath)} ${code(t.type)}<span class="sub">${esc(t.matchedChild)}</span></li>`).join('')}</ul>`;
+}
+
 function euProfileCard(p, model) {
   const status = p.pass ? 'pass' : 'fail';
   const parts = [];
@@ -443,20 +387,26 @@ function euProfileCard(p, model) {
 
   if (p.obligationViolations.length) {
     parts.push(`<div class="panel fail"><h4>Obligation check (SHALL:able-to-populate)</h4>` +
-      '<p class="note">The HL7 FHIR Validator does not check obligations or MustSupport. This tool checks that every element the EU profile marks <code>SHALL:able-to-populate</code> exists in your profile, is MustSupport and has a maximum cardinality above 0.</p>' +
+      '<p class="note">Checked by this tool, not by the HL7 FHIR Validator.</p>' +
       `${obligationTable(p.obligationViolations, model.title)}</div>`);
   }
 
   if (p.autoResolved.length) {
-    parts.push('<div class="panel info"><h4>Automatically resolved (information)</h4>' +
-      '<p class="note">Not declared by your profile, but guaranteed by its minimum cardinalities. Excluded from the verdict.</p>' +
+    parts.push('<div class="panel info"><h4>Automatically resolved constraints</h4>' +
+      '<p class="note">Excluded from the verdict.</p>' +
       `${autoResolvedTable(p.autoResolved)}</div>`);
   }
 
+  if (p.typeSlices.length) {
+    parts.push('<div class="panel info"><h4>Not applicable in this profile</h4>' +
+      '<p class="note">Optional EU type slices; excluded from the verdict.</p>' +
+      `${typeSliceList(p.typeSlices)}</div>`);
+  }
+
   if (p.pass) {
-    parts.unshift(p.autoResolved.length
-      ? '<p class="ok">The validator reported only constraints that this tool resolved automatically (see below); no other deviations, and the obligation check found no violation.</p>'
-      : '<p class="ok">No deviations found: the validator accepted the claim and the obligation check found no violation.</p>');
+    parts.unshift(p.autoResolved.length || p.typeSlices.length
+      ? '<p class="ok">No remaining findings.</p>'
+      : '<p class="ok">No findings.</p>');
   }
 
   return `<article class="card ${status}" data-status="${status}">` +
@@ -465,12 +415,9 @@ function euProfileCard(p, model) {
     `<div class="card-body">${parts.join('')}</div></article>`;
 }
 
-function otherResults(otherIssues) {
-  if (!otherIssues.total) return '';
-  const { bySeverity } = otherIssues;
-  const counts = SEVERITIES.filter(s => bySeverity[s].length)
-    .map(s => plural(bySeverity[s].length, ...SEVERITY_COUNT[s])).join(', ');
-  const groups = SEVERITIES.filter(s => bySeverity[s].length).map((sev) => {
+/** Validator issues grouped by severity (one <details> per severity). */
+function issueGroups(bySeverity) {
+  return SEVERITIES.filter(s => bySeverity[s].length).map((sev) => {
     const items = bySeverity[sev].map((i) => {
       const loc = [
         i.location ? esc(i.location) : '<em>no location</em>',
@@ -481,18 +428,58 @@ function otherResults(otherIssues) {
     }).join('');
     return `<details class="sev" open><summary>${esc(SEVERITY_LABELS[sev])} <span class="pill ${sev}">${bySeverity[sev].length}</span></summary><ul class="issues">${items}</ul></details>`;
   }).join('');
+}
+
+function otherResults(otherIssues) {
+  if (!otherIssues.total) return '';
+  const { bySeverity } = otherIssues;
+  const counts = SEVERITIES.filter(s => bySeverity[s].length)
+    .map(s => plural(bySeverity[s].length, ...SEVERITY_COUNT[s])).join(', ');
   return '<h2 id="other">Other validation results</h2>' +
-    '<p class="note">Validator messages that are not about compliesWithProfile. They are listed for completeness and do not change the verdict.</p>' +
-    `<details class="other"><summary>${esc(plural(otherIssues.total, 'message'))}: ${esc(counts)}</summary>${groups}</details>`;
+    '<p class="note">Validator messages that are not about compliesWithProfile; they do not change the verdict.</p>' +
+    `<details class="other"><summary>${esc(plural(otherIssues.total, 'message'))}: ${esc(counts)}</summary>${issueGroups(bySeverity)}</details>`;
+}
+
+function exampleItem(e) {
+  const status = e.pass ? 'pass' : 'fail';
+  const counts = `${plural(e.errors, 'error')}, ${plural(e.warnings, 'warning')}`;
+  const id = e.resourceId ? ` <span class="sub">id: ${esc(e.resourceId)}</span>` : '';
+  const body = [];
+  if (e.summaryText) body.push(`<p class="note">${esc(e.summaryText)}</p>`);
+  if (e.noResult) body.push(`<p class="issue-msg">No validator result${e.error ? `: ${esc(e.error)}` : ''}</p>`);
+  body.push(e.issueCount ? issueGroups(e.bySeverity) : (e.noResult ? '' : '<p class="ok">No issues.</p>'));
+  return `<details class="example ${status}" data-status="${status}"><summary><span class="badge ${status}">${e.pass ? 'OK' : 'FAIL'}</span>` +
+    `<span class="ex-name">${code(e.fileName)}${id}</span><span class="ex-counts">${esc(counts)}</span></summary>` +
+    `<div class="ex-body">${body.join('')}</div></details>`;
+}
+
+/**
+ * The "Examples" section (--examples): one collapsed entry per example instance.
+ * examplesLink is a relative link to the Markdown examples report (optional).
+ */
+function examplesSection(examples, examplesLink) {
+  if (!examples) return '';
+  const type = examples.fhirType ? ` ${code(examples.fhirType)}` : '';
+  const head = '<h2 id="examples">Examples</h2>' +
+    `<p class="note">Example instances${type} from the package, validated with <code>meta.profile</code> claims for the checked EU profiles.</p>`;
+  if (!examples.total) return `${head}<p class="note">No example instances found.</p>`;
+  // only a plain relative path (no scheme, not absolute) becomes a link
+  const relative = examplesLink && !/^([a-z][a-z0-9+.-]*:|[\\/])/i.test(examplesLink);
+  const link = relative ? ` <a href="${esc(examplesLink)}">Markdown</a>` : '';
+  return `${head}<p><strong>${esc(examples.passed)} of ${esc(examples.total)}</strong> without errors.${link}</p>` +
+    examples.items.map(exampleItem).join('\n');
 }
 
 /**
  * Renders the single-profile report model as a self-contained HTML document.
  *
- * @param {object} model - Result of reportModel.buildReportModel
+ * @param {object} model - Result of reportModel.buildReportModel; optional
+ *   model.examples (reportModel.buildExamplesModel) and model.examplesLink
+ *   (relative link to the Markdown examples report) add the "Examples" section
  * @returns {string}
  */
 function renderHtmlReport(model) {
+  const examples = model.examples ?? null;
   const { summary } = model;
   const state = summary.total === 0 ? 'none' : (summary.pass ? 'pass' : 'fail');
   const verdictTitle = state === 'none'
@@ -521,13 +508,14 @@ function renderHtmlReport(model) {
       [summary.nonCompliant, 'not fulfilled', summary.nonCompliant ? 'fail' : ''],
       [summary.obligationViolations, 'obligation violations', summary.obligationViolations ? 'fail' : ''],
     ]),
-    howToRead(),
-    toolbar('Show only failing EU profiles'),
+    toolbar(examples && examples.total ? 'Show only failing EU profiles and examples' : 'Show only failing EU profiles'),
     '<h2 id="eu-profiles">EU profiles</h2>',
+    '<p class="note">Findings reported by the HL7 FHIR Validator for each compliesWithProfile claim, and by the obligation check of this tool.</p>',
     model.euProfiles.length
       ? model.euProfiles.map(p => euProfileCard(p, model)).join('\n')
       : '<p class="note">No EU profiles were checked.</p>',
     otherResults(model.otherIssues),
+    examplesSection(examples, model.examplesLink ?? null),
     footer(model.meta, model.date, model.validatorSummary ? ` Validator summary: ${esc(model.validatorSummary)}` : ''),
     '</main>',
     pageEnd(),
@@ -626,7 +614,6 @@ export {
   esc,
   safeHref,
   logoDataUri,
-  issueHint,
   renderHtmlReport,
   renderPackageHtml,
   renderHtmlErrorReport,

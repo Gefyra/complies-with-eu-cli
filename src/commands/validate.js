@@ -22,8 +22,8 @@ import {
   describeBatchFailure,
 } from '../lib/javaValidatorServer.js';
 import { generateExampleReport, appendExampleSummary, renderPackageMarkdown } from '../lib/reportGen.js';
-import { buildPackageModel } from '../lib/reportModel.js';
-import { renderPackageHtml } from '../lib/reportHtml.js';
+import { buildPackageModel, buildExamplesModel } from '../lib/reportModel.js';
+import { renderPackageHtml, renderHtmlReport } from '../lib/reportHtml.js';
 import {
   parsePackageSpec,
   checkPackageArgument,
@@ -175,11 +175,36 @@ async function selectEuProfiles({ canonical, discovered, options, log }) {
 }
 
 /**
+ * Adds the "Examples" section to the profile's HTML report (rewrites the file).
+ *
+ * @param {{model: object, path: string}} html - Report model and HTML path from postProcessProfile
+ * @param {string} fhirType
+ * @param {object|null} exResult - Result of runExamplesForProfile (null: no examples)
+ */
+async function addExamplesToHtml(html, fhirType, exResult) {
+  const reportPath = exResult ? exResult.exReportPath : null;
+  html.model.examples = buildExamplesModel({ fhirType, results: exResult ? exResult.exampleResults : [], reportPath });
+  html.model.examplesLink = reportPath
+    ? path.relative(path.dirname(html.path), reportPath).split(path.sep).map(encodeURIComponent).join('/')
+    : null;
+  await fs.outputFile(html.path, renderHtmlReport(html.model), 'utf8');
+}
+
+/**
  * Runs example validation for one profile and writes/links the example report.
+ * With `html` ({ model, path } of the profile's HTML report), the results are
+ * also added to that HTML page.
  * @returns {Promise<object|null>} JSON summary (see summarizeExamples) or null if no examples
  */
-async function validateExamples({ pkgDir, fhirType, slug, examplesDir, euCanonicals, igIds, canonical, packageSpec, mainReportPath, debug, verbose, log }) {
+async function validateExamples({ pkgDir, fhirType, slug, examplesDir, euCanonicals, igIds, canonical, packageSpec, mainReportPath, html = null, debug, verbose, log }) {
   const exResult = await runExamplesForProfile({ pkgDir, fhirType, slug, examplesDir, euCanonicals, igIds, debug, verbose, log });
+  if (html) {
+    try {
+      await addExamplesToHtml(html, fhirType, exResult);
+    } catch (err) {
+      log(chalk.yellow(`  Adding the examples to the HTML report failed: ${err.message}`));
+    }
+  }
   if (!exResult) return summarizeExamples(null);
   try {
     await generateExampleReport({
@@ -306,9 +331,9 @@ async function runValidate(pkg, canonical, options = {}) {
 
   // 8. Post-process: obligation check, constraint evaluation, report generation
   spinner = ora('Post-processing validator results...').start();
-  let compliance, reportPath, htmlReportPath, obligationViolationsByEuCanonical;
+  let compliance, reportPath, htmlReportPath, reportModel, obligationViolationsByEuCanonical;
   try {
-    ({ compliance, reportPath, htmlReportPath, obligationViolationsByEuCanonical } = await postProcessProfile({
+    ({ compliance, reportPath, htmlReportPath, reportModel, obligationViolationsByEuCanonical } = await postProcessProfile({
       pkgDir,
       profile,
       canonical,
@@ -341,6 +366,7 @@ async function runValidate(pkg, canonical, options = {}) {
       canonical,
       packageSpec,
       mainReportPath: reportPath,
+      html: htmlReportPath ? { model: reportModel, path: htmlReportPath } : null,
       debug: !!options.debug,
       verbose: !!options.verbose,
       log,
@@ -542,9 +568,9 @@ async function runValidateBatchFile(jsonFile, options = {}) {
     }
 
     // ── Step 6: Post-process (obligation, constraints, report) ────────────
-    let reportPath, htmlReportPath, compliance;
+    let reportPath, htmlReportPath, reportModel, compliance;
     try {
-      ({ reportPath, htmlReportPath, compliance } = await postProcessProfile({
+      ({ reportPath, htmlReportPath, reportModel, compliance } = await postProcessProfile({
         pkgDir,
         profile,
         canonical,
@@ -580,6 +606,7 @@ async function runValidateBatchFile(jsonFile, options = {}) {
         canonical,
         packageSpec,
         mainReportPath: reportPath,
+        html: htmlReportPath ? { model: reportModel, path: htmlReportPath } : null,
         debug: !!options.debug,
         verbose: !!options.verbose,
         log,
@@ -1015,6 +1042,7 @@ async function runValidatePackage(pkgInput, options = {}) {
   }
 
   const resultMap = new Map(batchResults.map(r => [r.fileName, r]));
+  const htmlBySlug = new Map(); // slug → { model, path } of the profile's HTML report (for --examples)
 
   // 7. Post-process each profile
   for (const prep of prepared) {
@@ -1027,7 +1055,7 @@ async function runValidatePackage(pkgInput, options = {}) {
     }
 
     try {
-      const { compliance, reportPath } = await postProcessProfile({
+      const { compliance, reportPath, htmlReportPath, reportModel } = await postProcessProfile({
         pkgDir,
         profile,
         canonical,
@@ -1041,6 +1069,7 @@ async function runValidatePackage(pkgInput, options = {}) {
         options,
       });
 
+      if (htmlReportPath) htmlBySlug.set(slug, { model: reportModel, path: htmlReportPath });
       const pass = compliance.every(c => c.pass);
       summary.success++;
       summary.profiles.push({ canonical, slug, pass, reportPath, compliance });
@@ -1069,6 +1098,7 @@ async function runValidatePackage(pkgInput, options = {}) {
         canonical,
         packageSpec,
         mainReportPath: entry && !entry.error ? entry.reportPath : null,
+        html: entry && !entry.error ? htmlBySlug.get(slug) ?? null : null,
         debug: !!options.debug,
         verbose: !!options.verbose,
         log,
@@ -1087,5 +1117,6 @@ export {
   runValidatePackage,
   // exported for tests
   selectEuProfiles,
+  addExamplesToHtml,
   isInteractive,
 };
