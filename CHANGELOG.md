@@ -14,10 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The CLI is now an ES module package (`"type": "module"`). Commands, options, exit codes, the `--json` output, report formats and file locations are unchanged.
 - Updated dependencies: chalk 4 → 6, ora 5 → 10, inquirer 8 → 14, commander 14 → 15. These versions are ESM-only and are now used directly.
 
-### Fixed
-
-- The CLI no longer exits silently with code 0 when Node.js resolves the entry point differently from the real path of the script, for example `node bin/complies-with-eu --version` (without `.js`) or `node --preserve-symlinks-main` through a linked directory.
-
 ## [1.3.1] - 2026-11-15
 
 ### Fixed
