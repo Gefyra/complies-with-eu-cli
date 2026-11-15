@@ -57,5 +57,7 @@ test('clean.isKeptFile keeps reports and mapping.json only', () => {
   assert.equal(isKeptFile('/w/pkg/mapping.json'), true);
   assert.equal(isKeptFile('/w/pkg/Patient-modified.json'), false);
   assert.equal(isKeptFile('/w/pkg/_batch-raw.log'), false);
+  assert.equal(isKeptFile('/w/Patient-modified-raw.log'), false);
+  assert.equal(isKeptFile('/w/pkg/validator-server.log'), false);
   assert.equal(isKeptFile('/w/pkg/notes.md'), false);
 });

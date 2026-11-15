@@ -17,6 +17,7 @@ const { parsePackageSpec } = require('../lib/validateCore');
 function validateOptions(options, extra = {}) {
   return {
     debug: options.debug,
+    verbose: options.verbose,
     examples: options.examples,
     json: options.json,
     output: options.output,
