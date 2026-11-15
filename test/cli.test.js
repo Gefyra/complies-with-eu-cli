@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 const BIN = path.join(import.meta.dirname, '..', 'bin', 'complies-with-eu.js');
 const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8'));
@@ -96,4 +96,18 @@ test('search refuses to run without a terminal (exit 2)', () => {
   const r = run(['search', 'hl7.fhir.uv.ips@2.0.0']);
   assert.equal(r.code, 2);
   assert.match(r.stderr, /needs a terminal/);
+});
+
+test('a closed stdout pipe (e.g. "--help | head -1") ends quietly, without an EPIPE stack trace', async () => {
+  const child = spawn(process.execPath, [BIN, '--help'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, COMPLIES_WITH_EU_HOME: HOME },
+  });
+  // Close the read end before the CLI writes, so every write hits a broken pipe.
+  child.stdout.destroy();
+  let stderr = '';
+  child.stderr.on('data', (d) => { stderr += d; });
+  const code = await new Promise((resolve) => child.on('close', resolve));
+  assert.doesNotMatch(stderr, /EPIPE|Unhandled 'error' event/);
+  assert.equal(code, 0);
 });

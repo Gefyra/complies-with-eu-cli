@@ -233,8 +233,23 @@ function isEntryPoint(argv1 = process.argv[1], selfUrl = import.meta.url) {
   return candidates.some((c) => selves.some((s) => norm(c) === norm(s)));
 }
 
+/**
+ * Ends quietly when the reader of stdout/stderr goes away, e.g.
+ * "complies-with-eu --help | head -3", instead of crashing with an unhandled
+ * EPIPE stack trace. Other stream errors are rethrown unchanged.
+ */
+function exitQuietlyOnBrokenPipe(streams = [process.stdout, process.stderr]) {
+  for (const stream of streams) {
+    stream.on('error', (err) => {
+      if (err && err.code === 'EPIPE') process.exit(process.exitCode ?? 0);
+      throw err;
+    });
+  }
+}
+
 if (isEntryPoint()) {
+  exitQuietlyOnBrokenPipe();
   main();
 }
 
-export { buildProgram, main, handleError, isEntryPoint };
+export { buildProgram, main, handleError, isEntryPoint, exitQuietlyOnBrokenPipe };
