@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-15
+
 ### Added
 
 - `--verbose` for `validate`, `validate-batch` and `search` (passed through to `validate`): streams the full HL7 FHIR Validator output to stderr, as before. `--debug` implies `--verbose`.
@@ -16,13 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The HL7 FHIR Validator output (often several hundred "Information @ …" lines per run) is no longer streamed to stderr by default. A progress indicator shows the current phase (loading packages, validating) and ends with the validator summary, for example `*FAILURE*: 34 errors, 1 warnings, 101 notes`. Without a terminal (CI, piped stderr) each phase is printed once as a plain line. The validator server in package mode is quiet in the same way.
 - The raw validator output is now always written to a log file in the workdir (`*-raw.log`, `examples/<slug>/_batch-raw.log`, `<package>/validator-server.log`), not only with `--debug` or on failure. Its path is printed after each run. `clean` removes these logs.
 - When the validator crashes, exits abnormally or returns no result summary, the error message now includes the exit code, the last 20 lines of validator output and the path of the log file. In todo-file mode the error is also printed on the console, not only written to the error report.
+- Updated dependencies: commander 12 → 14, axios 1.21.1, fs-extra 11.4.1. With commander 14, unexpected extra arguments are rejected with a usage error (exit code 2) instead of being ignored, for example `complies-with-eu doctor extra`.
 - README: the disk space requirement is now about 2 GB instead of 1 GB, based on a measured clean installation.
 
 ### Fixed
 
 - Package mode: when the validator server crashes or stops answering during the batch (for example out of memory), the progress no longer reports "Validator batch completed". It reports the failure, prints the server exit code, the last lines of its output and the path of `validator-server.log`, and each affected profile error names the log file instead of only `ECONNREFUSED` or `socket hang up`.
-- When the validator crashes during example validation, each example gets a one-line error (exit code and log path) in the `--json` output and in the examples report. The full message with the last lines of output is printed once on the console.
-- The progress label shows "Loading packages" again while the validator loads the IG packages after connecting to the terminology server, instead of staying on "Connecting to terminology server" for most of the startup.
 - Package mode starts the HL7 FHIR Validator with the `server` command instead of the deprecated `-server` option, which removes the warning "The option '-server' is no longer in use".
 - Compliance report: identical rows in the "Non-Compliant Profiles — Details" table (for example the same missing constraint reported for several elements) are collapsed into one row with "(reported N×)". For a missing constraint, the element path is now shown when exactly one element of the EU profile declares that constraint. The `report` field of `--json` contains the same Markdown; the JSON shape is unchanged.
 - Progress output no longer appears out of order when stdout and stderr are redirected or captured separately (for example in Docker or CI): all progress lines of `validate`, `validate-batch` and `search` now go to stderr, the same stream as the spinners. The final result (the "Done!" PASS/FAIL list, the report path and the batch summaries) stays on stdout; with `--json` it goes to stderr as before. When stderr is not a terminal, color codes are removed from these progress lines (unless `FORCE_COLOR` is set); spinner symbols and messages from the validator and package tools may still contain color codes.
