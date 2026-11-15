@@ -1,19 +1,17 @@
-'use strict';
-
-const chalk = require('chalk');
-const ora = require('ora');
-const fs = require('fs-extra');
-const {
+import chalk from 'chalk';
+import ora from 'ora';
+import fs from 'fs-extra';
+import {
   getHomeToolsDir,
   getLegacyToolsDir,
   loadEuPackages,
   loadToolsManifest,
   getWorkdir,
-} = require('../lib/config');
-const { ensureTool } = require('../lib/toolDownloader');
-const { downloadFhirPackages } = require('../lib/fhirPkgTool');
-const { ensureJava, requiredJavaMajor } = require('../lib/javaCheck');
-const { CliError } = require('../lib/errors');
+} from '../lib/config.js';
+import { ensureTool } from '../lib/toolDownloader.js';
+import { downloadFhirPackages } from '../lib/fhirPkgTool.js';
+import { ensureJava, requiredJavaMajor } from '../lib/javaCheck.js';
+import { CliError } from '../lib/errors.js';
 
 const log = (...args) => process.stderr.write(args.join(' ') + '\n');
 
@@ -58,11 +56,13 @@ async function runInit(options = {}) {
 
   const spinner3 = ora('Running fhir-pkg-tool for EU packages...').start();
   try {
-    await downloadFhirPackages(euPackages);
-    spinner3.succeed(`All ${euPackages.length} EU packages downloaded`);
+    const { installed, logFile } = await downloadFhirPackages(euPackages, { verbose: !!options.verbose });
+    const deps = installed.length > euPackages.length ? ` (${installed.length} packages incl. dependencies)` : '';
+    spinner3.succeed(`All ${euPackages.length} EU packages downloaded${deps}`);
+    if (logFile && !options.verbose) console.log(chalk.gray(`  fhir-pkg-tool output: ${logFile}`));
   } catch (err) {
-    spinner3.fail(`Failed to download EU packages: ${err.message}`);
-    throw new CliError(`Failed to download EU packages: ${err.message}`);
+    spinner3.fail('Failed to download EU packages');
+    throw new CliError(err.message, { cause: err });
   }
 
   console.log(chalk.green('\nInitialization complete. You can now run:\n'));
@@ -70,4 +70,4 @@ async function runInit(options = {}) {
   console.log(chalk.gray(`  Reports will be written to: ${getWorkdir()}\n`));
 }
 
-module.exports = { runInit };
+export { runInit };

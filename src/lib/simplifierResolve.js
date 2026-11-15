@@ -1,6 +1,4 @@
-'use strict';
-
-const axios = require('axios');
+import axios from 'axios';
 
 /**
  * Queries the Simplifier.net canonical resolve page and returns a list of
@@ -51,4 +49,4 @@ async function resolveCanonicalOnSimplifier(canonical) {
   return results;
 }
 
-module.exports = { resolveCanonicalOnSimplifier };
+export { resolveCanonicalOnSimplifier };

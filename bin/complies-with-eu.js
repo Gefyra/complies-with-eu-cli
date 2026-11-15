@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-'use strict';
-
-const fs = require('fs');
-const { Command, CommanderError } = require('commander');
-const chalk = require('chalk');
-const { getPackageInfo } = require('../src/lib/config');
-const { CliError, EXIT } = require('../src/lib/errors');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Command, CommanderError } from 'commander';
+import chalk from 'chalk';
+import { getPackageInfo } from '../src/lib/config.js';
+import { CliError, EXIT } from '../src/lib/errors.js';
 
 const { version } = getPackageInfo();
 
@@ -17,11 +17,13 @@ Getting started:
                                   and the EU packages (needs Java 21+)
   2. complies-with-eu validate hl7.fhir.uv.ips@2.0.0 \\
        http://hl7.org/fhir/uv/ips/StructureDefinition/Patient-uv-ips --all-counterparts
-  3. Open the Markdown report printed at the end of the run.
+  3. Open the Markdown report printed at the end of the run (add --html for an HTML report).
   Check your setup with: complies-with-eu doctor
+  Short alias: every command also works as "cwe", e.g. cwe doctor
 
 Reports:
   Written to <workdir>/<profile>-report.md (package mode: <workdir>/<package>/).
+  With --html, a self-contained <profile>-report.html is written next to it.
   Default workdir: ~/.complies-with-eu/workdir (override: --workdir or COMPLIES_WITH_EU_WORKDIR).
 
 Validator output:
@@ -30,9 +32,10 @@ Validator output:
   its path is printed when the validator fails. Use --verbose to stream it to stderr.
 
 Exit codes:
-  0  success (also when profiles are non-compliant, unless --fail-on-noncompliant is set)
-  1  at least one selected EU profile is not fulfilled (only with --fail-on-noncompliant)
-  2  usage or operational error (Java missing, not initialised, package not found, validator crash)
+  0    success (also when profiles are non-compliant, unless --fail-on-noncompliant is set)
+  1    at least one selected EU profile is not fulfilled (only with --fail-on-noncompliant)
+  2    usage or operational error (Java missing, not initialised, package not found, validator crash)
+  130  cancelled with Ctrl+C in an interactive prompt
 
 Environment variables:
   COMPLIES_WITH_EU_HOME                 state directory (default ~/.complies-with-eu: tools/, workdir/, cache.json)
@@ -60,14 +63,15 @@ function buildProgram() {
     .command('init')
     .description('Download the pinned fhir-pkg-tool and HL7 FHIR validator (see tools.json) and all EU packages')
     .option('--force', 'Force re-download of the tools even if already present')
-    .action((options) => require('../src/commands/init').runInit(options));
+    .option('--verbose', 'Stream the full fhir-pkg-tool output')
+    .action(async (options) => (await import('../src/commands/init.js')).runInit(options));
 
   program
     .command('doctor')
     .description('Check the environment: Node.js, Java, installed tools, EU packages and paths')
     .option('--json', 'Output the diagnostics as JSON')
     .option('--workdir <dir>', 'Workdir to report (default: $COMPLIES_WITH_EU_WORKDIR or <home>/workdir)')
-    .action((options) => require('../src/commands/doctor').runDoctor(options));
+    .action(async (options) => (await import('../src/commands/doctor.js')).runDoctor(options));
 
   program
     .command('validate <package> <canonical>')
@@ -75,6 +79,7 @@ function buildProgram() {
     .option('--eu-profiles <profiles>', 'Comma-separated EU profile canonical URLs (skips interactive selection)')
     .option('--all-counterparts', 'Use all EU profiles of the same resource type (no prompt)')
     .option('--examples', 'Also validate all example instances of the matching FHIR type in the package')
+    .option('--html', 'Also write a self-contained HTML report next to the Markdown report')
     .option('--json', 'Output result as JSON on stdout (machine-readable, for CI use; progress goes to stderr)')
     .option('--output <file>', 'Write JSON output to file instead of stdout (requires --json)')
     .option('--fail-on-noncompliant', 'Exit with code 1 if a selected EU profile is not fulfilled')
@@ -89,7 +94,7 @@ Examples:
 
 Without --eu-profiles or --all-counterparts an interactive selection is shown;
 without a terminal (CI, --json) one of the two flags is required.`)
-    .action((pkg, canonical, options) => require('../src/commands/validate').runValidate(pkg, canonical, options));
+    .action(async (pkg, canonical, options) => (await import('../src/commands/validate.js')).runValidate(pkg, canonical, options));
 
   program
     .command('validate-batch <jsonFileOrPackage>')
@@ -100,6 +105,7 @@ without a terminal (CI, --json) one of the two flags is required.`)
       "  - Otherwise: package mode ('name[@version|#version]'): validates all profiles in the package that have EU counterparts."
     )
     .option('--examples', 'Also validate all example instances of the matching FHIR types')
+    .option('--html', 'Also write self-contained HTML reports next to the Markdown reports (package mode: also package-report.html)')
     .option('--json', 'Output result as JSON on stdout (machine-readable, for CI use; progress goes to stderr)')
     .option('--output <file>', 'Write JSON output to file instead of stdout (requires --json)')
     .option('--fail-on-noncompliant', 'Exit with code 1 if a selected EU profile is not fulfilled (2 if a profile could not be validated)')
@@ -111,8 +117,8 @@ without a terminal (CI, --json) one of the two flags is required.`)
     .option('--server-port <port>', 'Package mode: port for the local Java validator server (default: a free port; also $VALIDATOR_SERVER_PORT). A server already running there is reused only if it has the package loaded')
     .option('--verbose', 'Stream the full HL7 FHIR validator output to stderr (default: concise progress only)')
     .option('--debug', 'Print the full Java validator command and stack traces (implies --verbose)')
-    .action((arg, options) => {
-      const { runValidateBatchFile, runValidatePackage } = require('../src/commands/validate');
+    .action(async (arg, options) => {
+      const { runValidateBatchFile, runValidatePackage } = await import('../src/commands/validate.js');
       if (arg.endsWith('.json') && fs.existsSync(arg)) {
         return runValidateBatchFile(arg, options);
       }
@@ -131,25 +137,26 @@ without a terminal (CI, --json) one of the two flags is required.`)
     .option('--eu-profiles <profiles>', 'Passed to validate: comma-separated EU profile canonical URLs')
     .option('--all-counterparts', 'Passed to validate: use all EU profiles of the same type')
     .option('--examples', 'Passed to validate: also validate example instances')
+    .option('--html', 'Passed to validate: also write a self-contained HTML report')
     .option('--json', 'Passed to validate: machine-readable output')
     .option('--output <file>', 'Passed to validate: write JSON output to file (requires --json)')
     .option('--fail-on-noncompliant', 'Passed to validate: exit with code 1 if a selected EU profile is not fulfilled')
     .option('--workdir <dir>', 'Directory for reports and intermediate files (default: <home>/workdir)')
     .option('--verbose', 'Passed to validate: stream the full HL7 FHIR validator output')
     .option('--debug', 'Passed to validate: debug output and stack traces (implies --verbose)')
-    .action((pkg, options) => require('../src/commands/search').runSearch(pkg, options));
+    .action(async (pkg, options) => (await import('../src/commands/search.js')).runSearch(pkg, options));
 
   program
     .command('build-index')
     .description('Scan all EU packages and output a JSON index of StructureDefinitions (used to generate eu-profiles.json)')
     .option('--output <file>', 'Write output to a file instead of stdout')
-    .action((options) => require('../src/commands/buildIndex').runBuildIndex(options));
+    .action(async (options) => (await import('../src/commands/buildIndex.js')).runBuildIndex(options));
 
   program
     .command('clean')
-    .description('Remove workdir artifacts (modified JSONs, logs) but keep Markdown reports and mapping.json')
+    .description('Remove workdir artifacts (modified JSONs, logs) but keep Markdown and HTML reports and mapping.json')
     .option('--workdir <dir>', 'Workdir to clean (default: $COMPLIES_WITH_EU_WORKDIR or <home>/workdir)')
-    .action((options) => require('../src/commands/clean').runClean(options));
+    .action(async (options) => (await import('../src/commands/clean.js')).runClean(options));
 
   return program;
 }
@@ -158,25 +165,76 @@ function wantsStack(argv) {
   return argv.includes('--debug') || !!process.env.DEBUG;
 }
 
+/**
+ * Prints the error that ended a command and sets process.exitCode accordingly.
+ */
+function handleError(err, argv = process.argv) {
+  if (err instanceof CommanderError) {
+    // Help and --version end with exit code 0; commander already printed usage errors.
+    process.exitCode = err.exitCode === 0 ? EXIT.OK : EXIT.ERROR;
+    return;
+  }
+  if (err && err.name === 'ExitPromptError') {
+    // inquirer: the user pressed Ctrl+C in a prompt.
+    process.stderr.write('\nCancelled.\n');
+    process.exitCode = EXIT.CANCELLED;
+    return;
+  }
+  const message = err instanceof CliError ? err.message : `Unexpected error: ${err && err.message ? err.message : err}`;
+  process.stderr.write(chalk.red(`\nError: ${message}\n`));
+  if (wantsStack(argv) && err && err.stack) process.stderr.write(chalk.gray(`${err.stack}\n`));
+  process.exitCode = err instanceof CliError ? err.exitCode : EXIT.ERROR;
+}
+
 async function main(argv = process.argv) {
   const program = buildProgram();
   try {
     await program.parseAsync(argv);
   } catch (err) {
-    if (err instanceof CommanderError) {
-      // Help and --version end with exit code 0; commander already printed usage errors.
-      process.exitCode = err.exitCode === 0 ? EXIT.OK : EXIT.ERROR;
-      return;
-    }
-    const message = err instanceof CliError ? err.message : `Unexpected error: ${err && err.message ? err.message : err}`;
-    process.stderr.write(chalk.red(`\nError: ${message}\n`));
-    if (wantsStack(argv) && err && err.stack) process.stderr.write(chalk.gray(`${err.stack}\n`));
-    process.exitCode = err instanceof CliError ? err.exitCode : EXIT.ERROR;
+    handleError(err, argv);
   }
 }
 
-if (require.main === module) {
+function realpathOrNull(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when this file is the entry point (run directly or through the npm bin
+ * link or shim), false when it is imported, for example by the tests.
+ *
+ * Node does not resolve the main module in one fixed way: it appends ".js" to
+ * an extensionless path, and with --preserve-symlinks-main import.meta.url keeps
+ * the link path. So several forms of argv[1] are compared with this file's path
+ * and its realpath. (import.meta.main would do this, but needs Node >= 24.2.)
+ */
+function isEntryPoint(argv1 = process.argv[1], selfUrl = import.meta.url) {
+  if (!argv1) return false;
+  let self;
+  try {
+    self = fileURLToPath(selfUrl);
+  } catch {
+    return false;
+  }
+  const resolved = path.resolve(argv1);
+  const candidates = [resolved];
+  if (!path.extname(resolved)) candidates.push(`${resolved}.js`);
+  for (const c of [...candidates]) {
+    const real = realpathOrNull(c);
+    if (real) candidates.push(real);
+  }
+  const selves = [self, realpathOrNull(self)].filter(Boolean);
+  // Windows paths are case-insensitive (e.g. a lowercase drive letter).
+  const norm = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+  return candidates.some((c) => selves.some((s) => norm(c) === norm(s)));
+}
+
+if (isEntryPoint()) {
   main();
 }
 
-module.exports = { buildProgram, main };
+export { buildProgram, main, handleError, isEntryPoint };

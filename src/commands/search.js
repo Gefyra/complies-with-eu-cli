@@ -1,18 +1,16 @@
-'use strict';
+import chalk from 'chalk';
+import ora from 'ora';
+import inquirer from 'inquirer';
 
-const chalk = require('chalk');
-const ora = require('ora');
-const inquirer = require('inquirer');
-
-const { loadAllSelectionCaches, setWorkdir } = require('../lib/config');
-const { downloadFhirPackage, resolvePackageDir } = require('../lib/fhirPkgTool');
-const { ensureReady, resolveEuPackageDirs } = require('../lib/preflight');
-const { CliError } = require('../lib/errors');
-const { makeProgressLogger } = require('../lib/output');
-const { findAllProfilesInPackage, findEuProfilesByType } = require('../lib/profileUtils');
-const { runValidate } = require('./validate');
-const { resolveCanonicalOnSimplifier } = require('../lib/simplifierResolve');
-const { parsePackageSpec } = require('../lib/validateCore');
+import { loadAllSelectionCaches, setWorkdir } from '../lib/config.js';
+import { downloadFhirPackage, resolvePackageDir } from '../lib/fhirPkgTool.js';
+import { ensureReady, resolveEuPackageDirs } from '../lib/preflight.js';
+import { CliError } from '../lib/errors.js';
+import { makeProgressLogger } from '../lib/output.js';
+import { findAllProfilesInPackage, findEuProfilesByType } from '../lib/profileUtils.js';
+import { runValidate } from './validate.js';
+import { resolveCanonicalOnSimplifier } from '../lib/simplifierResolve.js';
+import { parsePackageSpec, checkPackageArgument } from '../lib/validateCore.js';
 
 /** Options passed through from search to validate. */
 function validateOptions(options, extra = {}) {
@@ -20,6 +18,7 @@ function validateOptions(options, extra = {}) {
     debug: options.debug,
     verbose: options.verbose,
     examples: options.examples,
+    html: options.html,
     json: options.json,
     output: options.output,
     workdir: options.workdir,
@@ -97,7 +96,7 @@ async function runSearchByCanonical(canonical, options = {}) {
 
   const { selectedPkg } = await promptFor(options)([
     {
-      type: 'list',
+      type: 'select',
       name: 'selectedPkg',
       message: 'Select the package to use:',
       choices,
@@ -123,6 +122,8 @@ async function runSearch(pkg, options = {}) {
   if (pkg.startsWith('http://') || pkg.startsWith('https://')) {
     return runSearchByCanonical(pkg, options);
   }
+  const pkgArgError = checkPackageArgument(pkg, { allowCanonical: true });
+  if (pkgArgError) throw new CliError(pkgArgError);
 
   log(chalk.bold('\ncomplies-with-eu search\n'));
 
@@ -142,11 +143,11 @@ async function runSearch(pkg, options = {}) {
   } catch {
     spinner = ora(`Downloading ${packageSpec}...`).start();
     try {
-      await downloadFhirPackage(packageSpec);
+      await downloadFhirPackage(packageSpec, { verbose: !!(options.verbose || options.debug) });
       spinner.succeed(`Package ${packageSpec} downloaded`);
     } catch (err) {
       spinner.fail(`Failed to download ${packageSpec}`);
-      throw new CliError(`Package '${packageSpec}' could not be downloaded: ${err.message}`);
+      throw new CliError(err.message, { cause: err });
     }
     try {
       pkgDir = await resolvePackageDir(packageName, version);
@@ -218,7 +219,7 @@ async function runSearch(pkg, options = {}) {
   log('');
   const { canonical } = await promptFor(options)([
     {
-      type: 'list',
+      type: 'select',
       name: 'canonical',
       message: 'Select profile to validate (Enter to confirm):',
       choices,
@@ -230,4 +231,8 @@ async function runSearch(pkg, options = {}) {
   await runValidate(pkg, canonical, validateOptions(options, { pkgDir }));
 }
 
-module.exports = { runSearch };
+export {
+  runSearch,
+  // exported for tests
+  validateOptions,
+};

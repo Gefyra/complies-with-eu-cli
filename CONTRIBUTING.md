@@ -8,7 +8,7 @@ By participating you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md). 
 
 | Path | Content |
 |------|---------|
-| `bin/`, `src/` | The `complies-with-eu` CLI (Node.js, CommonJS) |
+| `bin/`, `src/` | The `complies-with-eu` CLI (Node.js, ES modules) |
 | `eu-packages.json` | Pinned EU FHIR packages used by the CLI |
 | `java-validator-parameter.md` | Extra parameters passed to the HL7 FHIR Validator |
 
@@ -16,7 +16,7 @@ By participating you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md). 
 
 Prerequisites:
 
-- Node.js **20 or newer**
+- Node.js **22.22.2 or a newer 22.x, 24.15.0 or a newer 24.x, or 26+** (`engines.node`: `^22.22.2 || ^24.15.0 || >=26.0.0`)
 - Java **21 or newer** (the pinned fhir-pkg-tool is built for Java 21)
 - Git
 
@@ -45,7 +45,7 @@ New behaviour should come with tests. Bug fixes should include a test that fails
 
 ## Coding guidelines
 
-- **CommonJS only.** Use `require` / `module.exports`, not ES modules. The package is `"type": "commonjs"`.
+- **ES modules only.** Use `import` / `export`, not `require` / `module.exports`. The package is `"type": "module"`. Relative imports need the `.js` extension, Node built-ins use the `node:` prefix, and package files are located with `import.meta.dirname`. Load commands lazily with `await import()` in `bin/complies-with-eu.js`.
 - **English only for all user-facing text.** This covers CLI output, prompts, error messages, generated reports and documentation. Code comments should be in English, too.
 - **Keep the CLI's machine-readable output backward compatible.** The JSON written by `--json` / `--output` is consumed by automated pipelines. You may add fields. Do not remove, rename or retype existing fields.
 - **Keep command names, flags and exit codes stable.** By default the CLI exits with `0` even when a profile is not compliant. Non-zero exit codes on non-compliance are opt-in (`--fail-on-noncompliant`). Operational errors exit non-zero.

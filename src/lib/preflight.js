@@ -1,19 +1,18 @@
-'use strict';
-
-const path = require('path');
-const fs = require('fs-extra');
-const chalk = require('chalk');
-const {
+import path from 'node:path';
+import fs from 'fs-extra';
+import chalk from 'chalk';
+import {
   loadEuPackages,
   loadToolsManifest,
   getValidatorJar,
   getFhirPkgToolJar,
-} = require('./config');
-const { ensureJava, requiredJavaMajor } = require('./javaCheck');
-const { resolvePackageDir, packageHasSnapshots, downloadFhirPackage } = require('./fhirPkgTool');
-const { CliError } = require('./errors');
+} from './config.js';
+import { ensureJava, requiredJavaMajor } from './javaCheck.js';
+import { resolvePackageDir, packageHasSnapshots, downloadFhirPackage } from './fhirPkgTool.js';
+import { CliError } from './errors.js';
+import { makeProgressLogger } from './output.js';
 
-const stderrLog = require('./output').makeProgressLogger();
+const stderrLog = makeProgressLogger();
 
 /**
  * Lists what `init` should have installed but is missing (pure-ish; no Java needed).
@@ -91,4 +90,4 @@ async function resolveEuPackageDirs({ log = stderrLog, strict = true } = {}) {
   return dirs;
 }
 
-module.exports = { findMissingInitArtifacts, ensureReady, resolveEuPackageDirs };
+export { findMissingInitArtifacts, ensureReady, resolveEuPackageDirs };

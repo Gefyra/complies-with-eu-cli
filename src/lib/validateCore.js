@@ -1,25 +1,26 @@
-'use strict';
-
-const path = require('path');
-const chalk = require('chalk');
-const fs = require('fs-extra');
-const { getWorkdir, getPackageInfo, getValidatorJar, getToolsDir } = require('./config');
-const {
+import path from 'node:path';
+import chalk from 'chalk';
+import fs from 'fs-extra';
+import { getWorkdir, getPackageInfo, getValidatorJar, getToolsDir } from './config.js';
+import {
   findEuProfilesByType,
   addCompliesWithExtensions,
   canonicalToSlug,
   findExamplesInPackage,
   addMetaProfileClaims,
-} = require('./profileUtils');
-const { runValidatorBatch } = require('./javaValidator');
-const { oneLineError } = require('./validatorOutput');
-const { resolvePackageId, resolvePackageDependencyDirs } = require('./fhirPkgTool');
-const { generateReport, mdCode, mdText, exampleErrorCount } = require('./reportGen');
-const { checkObligations } = require('./obligationCheck');
-const { evaluateExistsOrConstraints, loadEuSds } = require('./constraintCheck');
-const { readInstalledVersionsSync } = require('./toolDownloader');
+} from './profileUtils.js';
+import { runValidatorBatch } from './javaValidator.js';
+import { oneLineError } from './validatorOutput.js';
+import { resolvePackageId, resolvePackageDependencyDirs } from './fhirPkgTool.js';
+import { generateReport, mdCode, mdText, exampleErrorCount } from './reportGen.js';
+import { renderHtmlReport, renderHtmlErrorReport } from './reportHtml.js';
+import { isoDate } from './reportModel.js';
+import { checkObligations } from './obligationCheck.js';
+import { evaluateExistsOrConstraints, loadEuSds } from './constraintCheck.js';
+import { readInstalledVersionsSync } from './toolDownloader.js';
+import { makeProgressLogger } from './output.js';
 
-const stderrLog = require('./output').makeProgressLogger();
+const stderrLog = makeProgressLogger();
 
 /**
  * Parses "packageName[@version]" (or "packageName#version") into { packageName, version }.
@@ -33,6 +34,30 @@ function parsePackageSpec(input) {
     packageName: input.slice(0, sepIdx),
     version: input.slice(sepIdx + 1) || 'current',
   };
+}
+
+/**
+ * Checks that a command-line argument can be a FHIR package id (optionally with
+ * @version / #version). FHIR package ids consist of at least two dot-separated
+ * parts, e.g. "de.gematik.isik". Returns null when plausible, otherwise a
+ * short user-facing explanation (pure, for tests).
+ * @param {string} input
+ * @param {{ allowCanonical?: boolean }} [opts] - true for commands that also accept a canonical URL
+ */
+function checkPackageArgument(input, { allowCanonical = false } = {}) {
+  const { packageName } = parsePackageSpec(String(input || '').trim());
+  if (/^[A-Za-z0-9][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)+$/.test(packageName)) return null;
+  const lines = [`'${input}' is not a FHIR package id${allowCanonical ? ' or a canonical URL' : ''}.`];
+  lines.push(allowCanonical ? 'Expected one of:' : 'Expected a FHIR package, for example:');
+  lines.push('  a package (name[@version]), e.g. de.gematik.isik@5.1.1 or hl7.fhir.uv.ips@2.0.0');
+  if (allowCanonical) {
+    lines.push('  a canonical URL, e.g. https://gematik.de/fhir/isik/StructureDefinition/ISiKPatient');
+    lines.push('  (Simplifier.net is then searched for packages that contain this profile)');
+  }
+  if (!/[/:]/.test(packageName)) {
+    lines.push(`If '${packageName}' is a profile name, use its canonical URL instead, or look it up on https://simplifier.net/search.`);
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -54,6 +79,21 @@ function buildErrorReport(canonical, packageSpec, message, date = new Date()) {
   ].join('\n');
 }
 
+/** The HTML report path that belongs to a Markdown report path (x-report.md → x-report.html). */
+function htmlPathFor(reportPath) {
+  return reportPath.replace(/\.md$/, '.html');
+}
+
+/**
+ * Metadata shown in the HTML reports: tool and validator version (see toolInfo)
+ * and the EU packages (see describeEuPackages).
+ *
+ * @param {Array<{packageName: string, version: string|null}>} euPackages
+ */
+function reportMeta(euPackages = []) {
+  return { tool: toolInfo(), euPackages };
+}
+
 /**
  * Writes an error report Markdown file for a profile that could not be processed.
  *
@@ -62,12 +102,23 @@ function buildErrorReport(canonical, packageSpec, message, date = new Date()) {
  * @param {string} packageSpec - e.g. "kbv.basis@1.8.0"
  * @param {string} message    - Human-readable error description
  * @param {string} reportDir  - Directory where the report should be written (defaults to getWorkdir())
+ * @param {object} [opts]
+ * @param {boolean} [opts.html] - Also write <slug>-report.html
+ * @param {object}  [opts.meta] - Metadata for the HTML report (see reportMeta)
+ * @returns {Promise<string>} The Markdown report path
  */
-async function writeErrorReport(slug, canonical, packageSpec, message, reportDir = null) {
+async function writeErrorReport(slug, canonical, packageSpec, message, reportDir = null, { html = false, meta = null } = {}) {
   const targetDir = reportDir ?? getWorkdir();
   const reportPath = path.join(targetDir, `${slug}-report.md`);
   await fs.ensureDir(targetDir);
   await fs.outputFile(reportPath, buildErrorReport(canonical, packageSpec, message), 'utf8');
+  if (html) {
+    await fs.outputFile(
+      htmlPathFor(reportPath),
+      renderHtmlErrorReport({ canonical, packageSpec, message, date: isoDate(), meta }),
+      'utf8'
+    );
+  }
   return reportPath;
 }
 
@@ -135,7 +186,8 @@ function collectNonCompliant(issues) {
 
 /**
  * Post-processes validator output: runs obligation check, constraint evaluation,
- * and generates the Markdown report.
+ * and generates the Markdown report (and, with options.html, the HTML report
+ * from the same report model).
  *
  * Throws when `parsed.summary` is missing: no validator result must never be
  * reported as "compliant".
@@ -151,8 +203,8 @@ function collectNonCompliant(issues) {
  * @param {object} params.parsed - Parsed validator output ({ summary, issues })
  * @param {string} params.slug - Filename slug
  * @param {string} params.reportDir - Directory for reports (defaults to getWorkdir())
- * @param {object} params.options - Additional options (e.g. { debug })
- * @returns {Promise<{compliance: Array, reportPath: string, obligationViolationsByEuCanonical: Map, filteredNonCompliantMap: Map, autoSatisfiedConstraints: Array}>}
+ * @param {object} params.options - Additional options (e.g. { debug, html })
+ * @returns {Promise<{compliance: Array, reportPath: string, htmlReportPath: string|null, reportModel: object, obligationViolationsByEuCanonical: Map, filteredNonCompliantMap: Map, autoSatisfiedConstraints: Array}>}
  */
 async function postProcessProfile({
   pkgDir,
@@ -165,7 +217,7 @@ async function postProcessProfile({
   parsed,
   slug,
   reportDir = null,
-  options = {}, // eslint-disable-line no-unused-vars
+  options = {},
 }) {
   if (!parsed || !parsed.summary || !Array.isArray(parsed.issues)) {
     throw new Error('The FHIR validator returned no result summary for this profile (crash or unexpected output); it cannot be treated as compliant.');
@@ -190,8 +242,11 @@ async function postProcessProfile({
   try {
     const rawNonCompliantMap = collectNonCompliant(parsed.issues);
     euSdByCanonical = await loadEuSds(euPackageDirs, euCanonicals);
+    // A snapshot generation error means the validator did not really evaluate the
+    // claims; never auto-resolve anything in that case.
+    const snapshotOk = !parsed.issues.some(i => /^ERROR_(GENERATING|PROCESSING)_SNAPSHOT$/.test(i.msgId || ''));
     ({ filteredMap: filteredNonCompliantMap, satisfied: autoSatisfiedConstraints } =
-      evaluateExistsOrConstraints({ inputSd: profile, euSdByCanonical, nonCompliantMap: rawNonCompliantMap }));
+      evaluateExistsOrConstraints({ inputSd: profile, euSdByCanonical, nonCompliantMap: rawNonCompliantMap, snapshotOk }));
   } catch {
     // non-fatal
     filteredNonCompliantMap = undefined;
@@ -201,7 +256,7 @@ async function postProcessProfile({
   // Generate report
   const reportPath = path.join(targetReportDir, `${slug}-report.md`);
   await fs.ensureDir(targetReportDir);
-  await generateReport({
+  const model = await generateReport({
     canonical,
     packageSpec,
     euProfiles,
@@ -214,6 +269,13 @@ async function postProcessProfile({
     euSdByCanonical,
   });
 
+  let htmlReportPath = null;
+  if (options.html) {
+    model.meta = reportMeta(await describeEuPackages(euPackageDirs).catch(() => []));
+    htmlReportPath = htmlPathFor(reportPath);
+    await fs.outputFile(htmlReportPath, renderHtmlReport(model), 'utf8');
+  }
+
   // Derive compliance
   const nonCompliantSet = new Set((filteredNonCompliantMap ?? collectNonCompliant(parsed.issues)).keys());
   const compliance = euProfiles.map(p => ({
@@ -224,6 +286,8 @@ async function postProcessProfile({
   return {
     compliance,
     reportPath,
+    htmlReportPath,
+    reportModel: model,
     obligationViolationsByEuCanonical,
     filteredNonCompliantMap,
     autoSatisfiedConstraints,
@@ -244,7 +308,7 @@ async function postProcessProfile({
  * @param {boolean} [params.verbose] - Stream the full validator output
  * @param {Function} [params.log] - Progress logger (default: stderr)
  * @param {Function} [params.runBatch] - runValidatorBatch replacement (tests)
- * @returns {Promise<{exampleResults: Array, exReportPath: string}|null>}
+ * @returns {Promise<{exampleResults: Array<{fileName: string, resourceId: string|null, parsed: object}>, exReportPath: string}|null>}
  */
 async function runExamplesForProfile({
   pkgDir,
@@ -275,12 +339,12 @@ async function runExamplesForProfile({
   await fs.emptyDir(examplesDir);
 
   // Write modified examples
-  const exampleFileNames = [];
+  const exampleFiles = [];
   for (const { json, fileName } of examples) {
     const modified = addMetaProfileClaims(json, euCanonicals);
     const outPath = path.join(examplesDir, fileName);
     await fs.writeJson(outPath, modified, { spaces: 2 });
-    exampleFileNames.push(fileName);
+    exampleFiles.push({ fileName, resourceId: json && typeof json.id === 'string' ? json.id : null });
   }
 
   // Validate batch
@@ -298,9 +362,10 @@ async function runExamplesForProfile({
 
   // Map results; a missing result is kept as summary:null and reported as failed
   const resultMap = new Map(batchResults.map(r => [r.fileName, r]));
-  const exampleResults = exampleFileNames.map(fn => ({
-    fileName: fn,
-    parsed: resultMap.get(fn) ?? { summary: null, issues: [], error: batchError || 'No validator result for this file' },
+  const exampleResults = exampleFiles.map(({ fileName, resourceId }) => ({
+    fileName,
+    resourceId,
+    parsed: resultMap.get(fileName) ?? { summary: null, issues: [], error: batchError || 'No validator result for this file' },
   }));
 
   const exReportPath = path.join(examplesDir, `${slug}-examples-report.md`);
@@ -361,8 +426,9 @@ function toolInfo() {
   return { name, version, validatorVersion };
 }
 
-module.exports = {
+export {
   parsePackageSpec,
+  checkPackageArgument,
   buildErrorReport,
   writeErrorReport,
   prepareProfile,
@@ -372,4 +438,6 @@ module.exports = {
   describeEuPackages,
   toolInfo,
   collectNonCompliant,
+  htmlPathFor,
+  reportMeta,
 };

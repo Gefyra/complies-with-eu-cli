@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Handling of the HL7 FHIR Validator console output: by default the raw output
  * (hundreds of "Information @ ..." lines) is NOT mirrored to the terminal. It is
@@ -10,8 +8,8 @@
  * Everything here is free of Java/child-process dependencies so it can be unit-tested.
  */
 
-const ora = require('ora');
-const chalk = require('chalk');
+import ora from 'ora';
+import chalk from 'chalk';
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g;
@@ -260,7 +258,7 @@ function createProgress({ text, verbose = false, stream = process.stderr, create
   };
 }
 
-module.exports = {
+export {
   TAIL_LINES,
   PHASES,
   stripAnsi,

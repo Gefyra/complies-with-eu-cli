@@ -1,14 +1,12 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-
-const BIN = path.join(__dirname, '..', 'bin', 'complies-with-eu.js');
-const pkg = require('../package.json');
+const BIN = path.join(import.meta.dirname, '..', 'bin', 'complies-with-eu.js');
+const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8'));
 
 // Isolated state dir: the smoke tests must never touch the real ~/.complies-with-eu.
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'cwe-cli-'));
@@ -58,10 +56,26 @@ test('flags used by CI integrations stay available', () => {
   const search = run(['search', '--help']);
   assert.equal(search.code, 0, search.stderr);
   assert.ok(search.stdout.includes('--verbose'), 'search --verbose');
+  const clean = run(['clean', '--help']);
+  assert.match(clean.stdout, /HTML\s+reports/);
   const index = run(['build-index', '--help']);
   assert.equal(index.code, 0, index.stderr);
   assert.ok(index.stdout.includes('--output'));
   assert.equal(run(['init', '--help']).code, 0);
+});
+
+test('--html is available on validate, validate-batch and search', () => {
+  for (const cmd of ['validate', 'validate-batch', 'search']) {
+    const r = run([cmd, '--help']);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /--html\b/, `${cmd} --html`);
+  }
+});
+
+test('search passes --html through to validate', async () => {
+  const { validateOptions } = await import('../src/commands/search.js');
+  assert.equal(validateOptions({ html: true }).html, true);
+  assert.equal(validateOptions({}).html, undefined);
 });
 
 test('usage errors exit 2 with a message on stderr and nothing on stdout', () => {

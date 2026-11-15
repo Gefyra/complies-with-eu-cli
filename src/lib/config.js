@@ -1,15 +1,13 @@
-'use strict';
-
-const os = require('os');
-const path = require('path');
-const fs = require('fs-extra');
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'fs-extra';
 
 /**
  * Package root (read-only assets: eu-packages.json, tools.json,
  * java-validator-parameter.md). Never write user state here: with a global or
  * npx install this directory is not writable and is replaced on every update.
  */
-const ROOT = path.resolve(__dirname, '..', '..');
+const ROOT = path.resolve(import.meta.dirname, '..', '..');
 
 const VALIDATOR_JAR_NAME = 'validator_cli.jar';
 const FHIR_PKG_TOOL_JAR_NAME = 'fhir-pkg-tool.jar';
@@ -198,7 +196,7 @@ function saveSelectionCache(canonical, selected) {
   fs.outputJsonSync(getCacheFile(), cache, { spaces: 2 });
 }
 
-module.exports = {
+export {
   ROOT,
   VALIDATOR_JAR_NAME,
   FHIR_PKG_TOOL_JAR_NAME,

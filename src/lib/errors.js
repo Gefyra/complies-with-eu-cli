@@ -1,5 +1,3 @@
-'use strict';
-
 /** Exit codes of the CLI. */
 const EXIT = Object.freeze({
   OK: 0,
@@ -7,6 +5,8 @@ const EXIT = Object.freeze({
   NON_COMPLIANT: 1,
   // Usage or operational error (Java missing, package not found, validator crash, ...).
   ERROR: 2,
+  // The user cancelled an interactive prompt with Ctrl+C (128 + SIGINT, as for a shell).
+  CANCELLED: 130,
 });
 
 /**
@@ -47,4 +47,4 @@ function outcomeExitCode({ failOnNoncompliant, nonCompliant = 0, errored = 0 }) 
   return EXIT.OK;
 }
 
-module.exports = { EXIT, CliError, setExitCode, outcomeExitCode };
+export { EXIT, CliError, setExitCode, outcomeExitCode };

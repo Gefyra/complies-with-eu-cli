@@ -1,9 +1,7 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-
-const { EXIT, CliError, setExitCode, outcomeExitCode } = require('../src/lib/errors');
+import { EXIT, CliError, setExitCode, outcomeExitCode } from '../src/lib/errors.js';
 
 test('outcomeExitCode: default is always 0 (backward compatible for CI consumers)', () => {
   assert.equal(outcomeExitCode({ failOnNoncompliant: false }), 0);
@@ -19,8 +17,8 @@ test('outcomeExitCode: with --fail-on-noncompliant errors win over non-complianc
   assert.equal(outcomeExitCode({ failOnNoncompliant: true, errored: 1 }), EXIT.ERROR);
 });
 
-test('EXIT codes are 0/1/2', () => {
-  assert.deepEqual({ ...EXIT }, { OK: 0, NON_COMPLIANT: 1, ERROR: 2 });
+test('EXIT codes are 0/1/2/130', () => {
+  assert.deepEqual({ ...EXIT }, { OK: 0, NON_COMPLIANT: 1, ERROR: 2, CANCELLED: 130 });
 });
 
 test('CliError: defaults to exit code 2 and keeps the cause', () => {

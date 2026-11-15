@@ -1,7 +1,5 @@
-'use strict';
-
-const fs = require('fs-extra');
-const path = require('path');
+import fs from 'fs-extra';
+import path from 'node:path';
 
 const OBLIGATION_URL = 'http://hl7.org/fhir/StructureDefinition/obligation';
 
@@ -191,4 +189,4 @@ async function checkObligations(inputPkgDir, inputCanonical, euPkgDirs, euCanoni
   return violations;
 }
 
-module.exports = { checkObligations, loadProfileByCanonical };
+export { checkObligations, loadProfileByCanonical };

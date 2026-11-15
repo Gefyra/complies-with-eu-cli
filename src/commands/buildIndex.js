@@ -1,10 +1,8 @@
-'use strict';
-
-const fs = require('fs-extra');
-const { loadEuPackages } = require('../lib/config');
-const { resolvePackageDir } = require('../lib/fhirPkgTool');
-const { findAllProfilesInPackage } = require('../lib/profileUtils');
-const { CliError } = require('../lib/errors');
+import fs from 'fs-extra';
+import { loadEuPackages } from '../lib/config.js';
+import { resolvePackageDir } from '../lib/fhirPkgTool.js';
+import { findAllProfilesInPackage } from '../lib/profileUtils.js';
+import { CliError } from '../lib/errors.js';
 
 /**
  * Scans all EU packages and writes a flat JSON array of StructureDefinitions
@@ -48,4 +46,4 @@ async function runBuildIndex(options = {}) {
   }
 }
 
-module.exports = { runBuildIndex };
+export { runBuildIndex };

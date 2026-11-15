@@ -1,9 +1,7 @@
-'use strict';
-
-const path = require('path');
-const fs = require('fs-extra');
-const chalk = require('chalk');
-const {
+import path from 'node:path';
+import fs from 'fs-extra';
+import chalk from 'chalk';
+import {
   getPackageInfo,
   getHome,
   getHomeToolsDir,
@@ -13,13 +11,64 @@ const {
   getCacheFile,
   loadEuPackages,
   loadToolsManifest,
-} = require('../lib/config');
-const { detectJava, requiredJavaMajor } = require('../lib/javaCheck');
-const { readInstalledVersionsSync, resolveToolSpec } = require('../lib/toolDownloader');
-const { resolvePackageDir, resolvePackageId, getFhirPackagesDir } = require('../lib/fhirPkgTool');
-const { EXIT, setExitCode } = require('../lib/errors');
+} from '../lib/config.js';
+import { detectJava, requiredJavaMajor } from '../lib/javaCheck.js';
+import { readInstalledVersionsSync, resolveToolSpec } from '../lib/toolDownloader.js';
+import { resolvePackageDir, resolvePackageId, getFhirPackagesDir } from '../lib/fhirPkgTool.js';
+import { EXIT, setExitCode } from '../lib/errors.js';
 
-const MIN_NODE_MAJOR = 18;
+/**
+ * Supported Node.js versions, identical to "engines.node" in package.json.
+ * It follows the engines range of inquirer 14 and the @inquirer/* packages.
+ */
+const NODE_ENGINES = '^22.22.2 || ^24.15.0 || >=26.0.0';
+
+/** Lowest supported Node.js version. */
+const MIN_NODE_VERSION = '22.22.2';
+
+/** Compares dotted numeric versions ("22.13.0"); returns <0, 0 or >0. */
+function compareNodeVersions(a, b) {
+  const pa = String(a).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+/**
+ * True when `version` satisfies `range`. Supports the subset of semver ranges
+ * used by engines.node fields: "||" alternatives of space-separated
+ * comparators (^x.y.z, >=, >, <=, <, = or a bare version), including partial
+ * versions such as ">=22".
+ */
+function satisfiesNodeRange(version, range) {
+  const ver = String(version).replace(/^v/, '');
+  return String(range).split('||').some((alt) => {
+    const comparators = alt.trim().split(/\s+/).filter(Boolean);
+    if (comparators.length === 0) return true;
+    return comparators.every((comp) => {
+      const m = /^(\^|>=|<=|>|<|=)?v?(\d+(?:\.\d+){0,2})$/.exec(comp);
+      if (!m) return false;
+      const [, op = '=', base] = m;
+      const cmp = compareNodeVersions(ver, base);
+      switch (op) {
+        case '^': return cmp >= 0 && parseInt(ver, 10) === parseInt(base, 10);
+        case '>=': return cmp >= 0;
+        case '>': return cmp > 0;
+        case '<=': return cmp <= 0;
+        case '<': return cmp < 0;
+        default: return cmp === 0;
+      }
+    });
+  });
+}
+
+/** True when the given Node.js version satisfies NODE_ENGINES. */
+function isSupportedNodeVersion(version = process.versions.node) {
+  return satisfiesNodeRange(version, NODE_ENGINES);
+}
 
 /**
  * Collects the environment diagnostics (no side effects besides running `java -version`).
@@ -28,7 +77,7 @@ const MIN_NODE_MAJOR = 18;
 async function collectDiagnostics() {
   const manifest = loadToolsManifest();
   const pkg = getPackageInfo();
-  const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
+  const nodeOk = isSupportedNodeVersion(process.versions.node);
   const minJava = requiredJavaMajor(manifest);
   const java = detectJava();
   const { dir: toolsDir, legacy } = resolveToolsDir();
@@ -66,7 +115,7 @@ async function collectDiagnostics() {
   }
 
   const problems = [];
-  if (nodeMajor < MIN_NODE_MAJOR) problems.push(`Node.js ${process.versions.node} is too old (need ${MIN_NODE_MAJOR}+, 20+ recommended)`);
+  if (!nodeOk) problems.push(`Node.js ${process.versions.node} is not supported (need ${NODE_ENGINES})`);
   if (!java.found) problems.push(`Java not found (${java.error})`);
   else if (java.major !== null && java.major < minJava) problems.push(`Java ${java.major} is too old (need ${minJava}+)`);
   for (const t of tools) if (!t.present) problems.push(`${t.fileName} missing`);
@@ -74,7 +123,7 @@ async function collectDiagnostics() {
 
   return {
     tool: pkg,
-    node: { version: process.versions.node, ok: nodeMajor >= MIN_NODE_MAJOR },
+    node: { version: process.versions.node, ok: nodeOk },
     java: { ...java, required: minJava, ok: java.found && (java.major === null || java.major >= minJava) },
     paths: {
       home: getHome(),
@@ -133,4 +182,4 @@ async function runDoctor(options = {}) {
   if (!d.ok) setExitCode(EXIT.ERROR);
 }
 
-module.exports = { runDoctor, collectDiagnostics };
+export { runDoctor, collectDiagnostics, isSupportedNodeVersion, satisfiesNodeRange, NODE_ENGINES, MIN_NODE_VERSION };

@@ -1,9 +1,7 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-
-const { makeProgressLogger, makeResultLogger, stripColorsForStream } = require('../src/lib/output');
+import { makeProgressLogger, makeResultLogger, stripColorsForStream } from '../src/lib/output.js';
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;]*m/g;

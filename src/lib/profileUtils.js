@@ -1,7 +1,5 @@
-'use strict';
-
-const fs = require('fs-extra');
-const path = require('path');
+import fs from 'fs-extra';
+import path from 'node:path';
 
 const COMPLIES_WITH_URL =
   'http://hl7.org/fhir/StructureDefinition/structuredefinition-compliesWithProfile';
@@ -201,7 +199,7 @@ async function findAllProfilesInPackage(pkgDir) {
   return profiles;
 }
 
-module.exports = {
+export {
   findProfileByCanonical,
   findEuProfilesByType,
   findAllProfilesInPackage,

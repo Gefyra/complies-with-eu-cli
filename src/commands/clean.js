@@ -1,13 +1,11 @@
-'use strict';
+import path from 'node:path';
+import fs from 'fs-extra';
+import chalk from 'chalk';
+import { getWorkdir, setWorkdir } from '../lib/config.js';
 
-const path = require('path');
-const fs = require('fs-extra');
-const chalk = require('chalk');
-const { getWorkdir, setWorkdir } = require('../lib/config');
-
-/** Files that `clean` keeps: Markdown reports and package-mode mapping.json. */
+/** Files that `clean` keeps: Markdown and HTML reports and package-mode mapping.json. */
 function isKeptFile(filePath) {
-  return filePath.endsWith('-report.md') || path.basename(filePath) === 'mapping.json';
+  return filePath.endsWith('-report.md') || filePath.endsWith('-report.html') || path.basename(filePath) === 'mapping.json';
 }
 
 /**
@@ -94,4 +92,4 @@ async function runClean(options = {}) {
   console.log(chalk.bold.green('\nDone!\n'));
 }
 
-module.exports = { runClean, isKeptFile };
+export { runClean, isKeptFile };

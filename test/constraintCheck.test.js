@@ -1,16 +1,15 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-
-const {
+import {
   parseExistsOrExpression,
   findConstraintBasePath,
   findConstraintPaths,
   isSatisfiedInInputSnapshot,
   isIgnoredSlicingDetail,
   evaluateExistsOrConstraints,
-} = require('../src/lib/constraintCheck');
+  resolveTypeSliceDetail,
+} from '../src/lib/constraintCheck.js';
 
 const EXT_URL = 'http://hl7.eu/fhir/base/StructureDefinition/patient-birthPlace';
 
@@ -231,4 +230,46 @@ test('findConstraintPaths: distinct element paths declaring an expression', () =
   assert.deepEqual(findConstraintPaths(sd, 'z'), []);
   assert.deepEqual(findConstraintPaths({ differential: sd.differential }, 'z'), ['Patient.other']);
   assert.deepEqual(findConstraintPaths(null, 'x'), []);
+});
+
+// ── Type slices (verified against HL7 FHIR Validator 7.0.5) ──────────────────
+const EU_CANON = 'http://hl7.eu/fhir/laboratory/StructureDefinition/Observation-resultslab-eu-lab|2.1.0';
+const euObs = (sliceMin = 0) => sd([
+  { id: 'Observation.value[x]', path: 'Observation.value[x]', min: 0, max: '1', type: ['Quantity', 'string', 'boolean'].map(code => ({ code })) },
+  { id: 'Observation.value[x]:valueQuantity', path: 'Observation.value[x]', sliceName: 'valueQuantity', min: 0, max: '1' },
+  { id: 'Observation.value[x]:valueBoolean', path: 'Observation.value[x]', sliceName: 'valueBoolean', min: sliceMin, max: '1' },
+]);
+const derivedObs = (types = ['Quantity', 'string'], max = '1') => sd([
+  { id: 'Observation.value[x]', path: 'Observation.value[x]', min: 0, max, type: types.map(code => ({ code })) },
+]);
+const TYPE_DETAIL = 'slice error: Mismatch in slicing at Observation.value[x]:valueBoolean: no slice found for the discriminator type:$this with the values boolean';
+
+test('resolveTypeSliceDetail: optional EU type slice whose type the profile does not allow is resolved', () => {
+  const r = resolveTypeSliceDetail(TYPE_DETAIL, { inputSd: derivedObs(), euSd: euObs(), euCanonical: EU_CANON });
+  assert.equal(r.kind, 'type-slice');
+  assert.equal(r.basePath, 'Observation.value[x]:valueBoolean');
+  assert.equal(r.type, 'boolean');
+  assert.match(r.matchedChild, /not allowed here \(allowed: Quantity, string\)/);
+});
+
+test('resolveTypeSliceDetail: stays a finding when the EU slice is required, the type is allowed, the element is looser or the snapshot failed', () => {
+  assert.equal(resolveTypeSliceDetail(TYPE_DETAIL, { inputSd: derivedObs(), euSd: euObs(1), euCanonical: EU_CANON }), null, 'required slice');
+  assert.equal(resolveTypeSliceDetail(TYPE_DETAIL, { inputSd: derivedObs(['Quantity', 'boolean']), euSd: euObs(), euCanonical: EU_CANON }), null, 'type allowed');
+  assert.equal(resolveTypeSliceDetail(TYPE_DETAIL, { inputSd: derivedObs(['Quantity'], '*'), euSd: euObs(), euCanonical: EU_CANON }), null, 'looser max');
+  assert.equal(resolveTypeSliceDetail(TYPE_DETAIL, { inputSd: derivedObs(), euSd: euObs(), euCanonical: EU_CANON, snapshotOk: false }), null, 'snapshot error');
+  assert.equal(resolveTypeSliceDetail(TYPE_DETAIL, { inputSd: derivedObs(), euSd: null, euCanonical: EU_CANON }), null, 'EU SD not loaded');
+  const urlDetail = 'slice error: Mismatch in slicing at Observation.statusReason.extension:foo: no slice found for the discriminator value:url with the values http://x';
+  assert.equal(resolveTypeSliceDetail(urlDetail, { inputSd: derivedObs(), euSd: euObs(), euCanonical: EU_CANON }), null, 'other discriminator');
+});
+
+test('evaluateExistsOrConstraints: profile passes when only optional type slices remain', () => {
+  const nonCompliantMap = new Map([[EU_CANON, [TYPE_DETAIL]]]);
+  const euSdByCanonical = new Map([[EU_CANON.split('|')[0], euObs()]]);
+  const { filteredMap, satisfied } = evaluateExistsOrConstraints({ inputSd: derivedObs(), euSdByCanonical, nonCompliantMap });
+  assert.equal(filteredMap.size, 0);
+  assert.equal(satisfied.length, 1);
+  assert.equal(satisfied[0].kind, 'type-slice');
+
+  const failed = evaluateExistsOrConstraints({ inputSd: derivedObs(), euSdByCanonical, nonCompliantMap, snapshotOk: false });
+  assert.equal(failed.filteredMap.size, 1, 'kept when the snapshot could not be generated');
 });

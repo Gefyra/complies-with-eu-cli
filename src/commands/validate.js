@@ -1,31 +1,32 @@
-'use strict';
+import path from 'node:path';
+import chalk from 'chalk';
+import ora from 'ora';
+import fs from 'fs-extra';
 
-const path = require('path');
-const chalk = require('chalk');
-const ora = require('ora');
-const fs = require('fs-extra');
-
-const inquirer = require('inquirer');
-const { getWorkdir, setWorkdir, loadSelectionCache, saveSelectionCache } = require('../lib/config');
-const { downloadFhirPackage, resolvePackageDir, packageHasSnapshots } = require('../lib/fhirPkgTool');
-const {
+import inquirer from 'inquirer';
+import { getWorkdir, setWorkdir, loadSelectionCache, saveSelectionCache } from '../lib/config.js';
+import { downloadFhirPackage, resolvePackageDir, packageHasSnapshots } from '../lib/fhirPkgTool.js';
+import {
   findProfileByCanonical,
   findEuProfilesByType,
   findAllProfilesInPackage,
   canonicalToSlug,
-} = require('../lib/profileUtils');
-const { runValidator } = require('../lib/javaValidator');
-const { createProgress } = require('../lib/validatorOutput');
-const {
+} from '../lib/profileUtils.js';
+import { runValidator } from '../lib/javaValidator.js';
+import { createProgress } from '../lib/validatorOutput.js';
+import {
   isServerReady,
   serverHasCanonical,
   startValidatorServer,
   validateBatchViaServer,
   describeBatchFailure,
-} = require('../lib/javaValidatorServer');
-const { generateExampleReport, appendExampleSummary, mdCell, mdText } = require('../lib/reportGen');
-const {
+} from '../lib/javaValidatorServer.js';
+import { generateExampleReport, appendExampleSummary, renderPackageMarkdown } from '../lib/reportGen.js';
+import { buildPackageModel, buildExamplesModel } from '../lib/reportModel.js';
+import { renderPackageHtml, renderHtmlReport } from '../lib/reportHtml.js';
+import {
   parsePackageSpec,
+  checkPackageArgument,
   writeErrorReport,
   prepareProfile,
   postProcessProfile,
@@ -33,11 +34,13 @@ const {
   summarizeExamples,
   describeEuPackages,
   toolInfo,
-} = require('../lib/validateCore');
-const { loadPackageMapping, savePackageMapping, loadExternalMapping } = require('../lib/mappingFile');
-const { ensureReady, resolveEuPackageDirs } = require('../lib/preflight');
-const { CliError, EXIT, setExitCode, outcomeExitCode } = require('../lib/errors');
-const { makeProgressLogger, makeResultLogger } = require('../lib/output');
+  htmlPathFor,
+  reportMeta,
+} from '../lib/validateCore.js';
+import { loadPackageMapping, savePackageMapping, loadExternalMapping } from '../lib/mappingFile.js';
+import { ensureReady, resolveEuPackageDirs } from '../lib/preflight.js';
+import { CliError, EXIT, setExitCode, outcomeExitCode } from '../lib/errors.js';
+import { makeProgressLogger, makeResultLogger } from '../lib/output.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -86,7 +89,7 @@ function validatorRunOptions(options) {
  * Resolves a package directory, downloading it via fhir-pkg-tool when it is
  * missing, incomplete or has no snapshots.
  */
-async function ensurePackageDir(packageName, version, log) {
+async function ensurePackageDir(packageName, version, log, { verbose = false } = {}) {
   const packageSpec = `${packageName}@${version}`;
   try {
     const pkgDir = await resolvePackageDir(packageName, version);
@@ -104,13 +107,14 @@ async function ensurePackageDir(packageName, version, log) {
   } catch {
     const spinner = ora(`Downloading ${packageSpec}...`).start();
     try {
-      await downloadFhirPackage(packageSpec);
+      await downloadFhirPackage(packageSpec, { verbose });
       spinner.succeed(`Package ${packageSpec} downloaded`);
     } catch (err) {
       spinner.fail(`Failed to download ${packageSpec}`);
       throw new CliError(
-        `Package '${packageSpec}' could not be downloaded: ${err.message}\n` +
-        `To find the right package, try: complies-with-eu search <canonical>`
+        `${err.message}\n` +
+        'To find the package that contains a profile, try: complies-with-eu search <canonical URL>',
+        { cause: err }
       );
     }
     try {
@@ -171,11 +175,36 @@ async function selectEuProfiles({ canonical, discovered, options, log }) {
 }
 
 /**
+ * Adds the "Examples" section to the profile's HTML report (rewrites the file).
+ *
+ * @param {{model: object, path: string}} html - Report model and HTML path from postProcessProfile
+ * @param {string} fhirType
+ * @param {object|null} exResult - Result of runExamplesForProfile (null: no examples)
+ */
+async function addExamplesToHtml(html, fhirType, exResult) {
+  const reportPath = exResult ? exResult.exReportPath : null;
+  html.model.examples = buildExamplesModel({ fhirType, results: exResult ? exResult.exampleResults : [], reportPath });
+  html.model.examplesLink = reportPath
+    ? path.relative(path.dirname(html.path), reportPath).split(path.sep).map(encodeURIComponent).join('/')
+    : null;
+  await fs.outputFile(html.path, renderHtmlReport(html.model), 'utf8');
+}
+
+/**
  * Runs example validation for one profile and writes/links the example report.
+ * With `html` ({ model, path } of the profile's HTML report), the results are
+ * also added to that HTML page.
  * @returns {Promise<object|null>} JSON summary (see summarizeExamples) or null if no examples
  */
-async function validateExamples({ pkgDir, fhirType, slug, examplesDir, euCanonicals, igIds, canonical, packageSpec, mainReportPath, debug, verbose, log }) {
+async function validateExamples({ pkgDir, fhirType, slug, examplesDir, euCanonicals, igIds, canonical, packageSpec, mainReportPath, html = null, debug, verbose, log }) {
   const exResult = await runExamplesForProfile({ pkgDir, fhirType, slug, examplesDir, euCanonicals, igIds, debug, verbose, log });
+  if (html) {
+    try {
+      await addExamplesToHtml(html, fhirType, exResult);
+    } catch (err) {
+      log(chalk.yellow(`  Adding the examples to the HTML report failed: ${err.message}`));
+    }
+  }
   if (!exResult) return summarizeExamples(null);
   try {
     await generateExampleReport({
@@ -203,6 +232,8 @@ async function validateExamples({ pkgDir, fhirType, slug, examplesDir, euCanonic
 async function runValidate(pkg, canonical, options = {}) {
   applyCommonOptions(options);
   const { log, out } = makeLoggers(options);
+  const pkgArgError = checkPackageArgument(pkg);
+  if (pkgArgError) throw new CliError(pkgArgError);
 
   log(chalk.bold('\ncomplies-with-eu validate\n'));
   if (!options._preflightDone) await ensureReady();
@@ -219,7 +250,7 @@ async function runValidate(pkg, canonical, options = {}) {
   if (pkgDir) {
     log(chalk.gray(`  Package dir (pre-resolved): ${pkgDir}`));
   } else {
-    pkgDir = await ensurePackageDir(packageName, version, log);
+    pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
   }
 
   // 2. Find the profile by canonical
@@ -238,7 +269,7 @@ async function runValidate(pkg, canonical, options = {}) {
   if (!profile.snapshot) {
     log(chalk.yellow(`  Profile '${canonical}' has no snapshot, downloading the package again via fhir-pkg-tool...`));
     await fs.remove(pkgDir);
-    pkgDir = await ensurePackageDir(packageName, version, log);
+    pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
     try {
       ({ profile } = await findProfileByCanonical(pkgDir, canonical));
     } catch (err) {
@@ -300,9 +331,9 @@ async function runValidate(pkg, canonical, options = {}) {
 
   // 8. Post-process: obligation check, constraint evaluation, report generation
   spinner = ora('Post-processing validator results...').start();
-  let compliance, reportPath, obligationViolationsByEuCanonical;
+  let compliance, reportPath, htmlReportPath, reportModel, obligationViolationsByEuCanonical;
   try {
-    ({ compliance, reportPath, obligationViolationsByEuCanonical } = await postProcessProfile({
+    ({ compliance, reportPath, htmlReportPath, reportModel, obligationViolationsByEuCanonical } = await postProcessProfile({
       pkgDir,
       profile,
       canonical,
@@ -335,6 +366,7 @@ async function runValidate(pkg, canonical, options = {}) {
       canonical,
       packageSpec,
       mainReportPath: reportPath,
+      html: htmlReportPath ? { model: reportModel, path: htmlReportPath } : null,
       debug: !!options.debug,
       verbose: !!options.verbose,
       log,
@@ -362,6 +394,7 @@ async function runValidate(pkg, canonical, options = {}) {
       validator: { mode, summary: parsed.summary ? parsed.summary.text : null },
       euPackages: await describeEuPackages(euPackageDirs),
       ...(options.examples ? { examples } : {}),
+      ...(htmlReportPath ? { htmlReportPath } : {}),
     };
     await emitJson(options, jsonResult, log);
   } else {
@@ -371,9 +404,10 @@ async function runValidate(pkg, canonical, options = {}) {
     }
   }
 
-  out(`\n  Report: ${reportPath}\n`);
+  out(`\n  Report: ${reportPath}${htmlReportPath ? '' : '\n'}`);
+  if (htmlReportPath) out(`  HTML report: ${htmlReportPath}\n`);
   setExitCode(outcomeExitCode({ failOnNoncompliant: options.failOnNoncompliant, nonCompliant }));
-  return { compliance, pass, reportPath };
+  return { compliance, pass, reportPath, htmlReportPath };
 }
 
 // ── validate-batch (todo file) ─────────────────────────────────────────────
@@ -430,14 +464,16 @@ async function runValidateBatchFile(jsonFile, options = {}) {
   const pkgDirCache = new Map();
 
   const results = { success: 0, failed: 0, reports: [] };
+  const meta = options.html ? reportMeta(await describeEuPackages(euPackageDirs)) : null;
 
   const fail = async (task, message) => {
     const { canonical, packageSpec, slug } = task;
-    const reportPath = await writeErrorReport(slug, canonical, packageSpec, message);
+    const reportPath = await writeErrorReport(slug, canonical, packageSpec, message, null, { html: !!options.html, meta });
+    const htmlReportPath = options.html ? htmlPathFor(reportPath) : null;
     log(chalk.red(`  ${message}`));
     log(chalk.red(`  Error report: ${reportPath}`));
     results.failed++;
-    results.reports.push({ canonical, packageSpec, reportPath, error: true, errorMessage: message, pass: false, compliance: [] });
+    results.reports.push({ canonical, packageSpec, reportPath, htmlReportPath, error: true, errorMessage: message, pass: false, compliance: [] });
   };
 
   for (let i = 0; i < tasks.length; i++) {
@@ -453,10 +489,10 @@ async function runValidateBatchFile(jsonFile, options = {}) {
     let pkgDir = pkgDirCache.get(packageSpec) ?? null;
     if (!pkgDir) {
       try {
-        pkgDir = await ensurePackageDir(packageName, version, log);
+        pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
         pkgDirCache.set(packageSpec, pkgDir);
       } catch (err) {
-        await fail(task, `Package ${packageSpec} could not be downloaded: ${err.message}`);
+        await fail(task, err.message);
         continue;
       }
     } else {
@@ -479,7 +515,7 @@ async function runValidateBatchFile(jsonFile, options = {}) {
       await fs.remove(pkgDir);
       pkgDirCache.delete(packageSpec);
       try {
-        pkgDir = await ensurePackageDir(packageName, version, log);
+        pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
         pkgDirCache.set(packageSpec, pkgDir);
         ({ profile } = await findProfileByCanonical(pkgDir, canonical));
       } catch (err) {
@@ -532,9 +568,9 @@ async function runValidateBatchFile(jsonFile, options = {}) {
     }
 
     // ── Step 6: Post-process (obligation, constraints, report) ────────────
-    let reportPath, compliance;
+    let reportPath, htmlReportPath, reportModel, compliance;
     try {
-      ({ reportPath, compliance } = await postProcessProfile({
+      ({ reportPath, htmlReportPath, reportModel, compliance } = await postProcessProfile({
         pkgDir,
         profile,
         canonical,
@@ -547,12 +583,13 @@ async function runValidateBatchFile(jsonFile, options = {}) {
         options,
       }));
       log(chalk.green(`  Report: ${reportPath}`));
+      if (htmlReportPath) log(chalk.green(`  HTML report: ${htmlReportPath}`));
     } catch (err) {
       await fail(task, `Post-processing failed: ${err.message}`);
       continue;
     }
 
-    const entry = { canonical, packageSpec, reportPath, error: false, pass: compliance.every(c => c.pass), compliance };
+    const entry = { canonical, packageSpec, reportPath, htmlReportPath, error: false, pass: compliance.every(c => c.pass), compliance };
     results.success++;
     results.reports.push(entry);
 
@@ -569,6 +606,7 @@ async function runValidateBatchFile(jsonFile, options = {}) {
         canonical,
         packageSpec,
         mainReportPath: reportPath,
+        html: htmlReportPath ? { model: reportModel, path: htmlReportPath } : null,
         debug: !!options.debug,
         verbose: !!options.verbose,
         log,
@@ -619,6 +657,7 @@ async function runValidateBatchFile(jsonFile, options = {}) {
         compliance: r.compliance || [],
         ...(r.error ? { error: r.errorMessage } : {}),
         ...(r.examples ? { examples: r.examples } : {}),
+        ...(r.htmlReportPath ? { htmlReportPath: r.htmlReportPath } : {}),
       })),
       tool: toolInfo(),
       euPackages: await describeEuPackages(euPackageDirs),
@@ -786,6 +825,8 @@ async function acquireLocalServer({ options, igIds, verifyCanonical, log, logFil
 async function runValidatePackage(pkgInput, options = {}) {
   applyCommonOptions(options);
   const { log, out } = makeLoggers(options);
+  const pkgArgError = checkPackageArgument(pkgInput);
+  if (pkgArgError) throw new CliError(pkgArgError);
 
   log(chalk.bold('\ncomplies-with-eu validate-batch (package mode)\n'));
   await ensureReady();
@@ -806,7 +847,7 @@ async function runValidatePackage(pkgInput, options = {}) {
   log(chalk.cyan(`Workdir: ${pkgWorkdir}\n`));
 
   // 2. Resolve/download package
-  const pkgDir = await ensurePackageDir(packageName, version, log);
+  const pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
 
   // 3. Resolve EU package directories once
   const euPackageDirs = await resolveEuPackageDirs({ log });
@@ -818,32 +859,22 @@ async function runValidatePackage(pkgInput, options = {}) {
   );
 
   const summary = { total: 0, success: 0, failed: 0, profiles: [] };
+  const meta = options.html ? reportMeta(euPackagesInfo) : null;
 
   const finish = async () => {
     const errored = summary.failed;
     const compliant = summary.profiles.filter(p => !p.error && p.pass).length;
     const nonCompliant = summary.profiles.filter(p => !p.error && !p.pass).length;
 
-    // Package-level report
+    // Package-level report (Markdown, and HTML with --html, from the same model)
     const packageReportPath = path.join(pkgWorkdir, 'package-report.md');
-    const reportLines = [
-      `# Package Compliance Report: ${mdText(packageSpec)}`,
-      '',
-      `**Date:** ${new Date().toISOString().slice(0, 10)}`,
-      `**Profiles:** ${summary.total} total, ${compliant} compliant, ${nonCompliant} non-compliant, ${errored} with errors`,
-      '',
-      '## Profiles',
-      '',
-      '| Profile | Status | Report |',
-      '|---------|--------|--------|',
-    ];
-    for (const p of summary.profiles) {
-      const status = p.error ? '⚠️ error' : (p.pass ? '✅' : '❌');
-      const name = mdCell(mdText(p.canonical.split('/').pop()));
-      reportLines.push(`| ${name} | ${status} | [Report](${p.slug}-report.md) |`);
+    const packageModel = buildPackageModel({ packageSpec, profiles: summary.profiles, total: summary.total, meta });
+    await fs.outputFile(packageReportPath, renderPackageMarkdown(packageModel), 'utf8');
+    let packageHtmlReportPath = null;
+    if (options.html) {
+      packageHtmlReportPath = htmlPathFor(packageReportPath);
+      await fs.outputFile(packageHtmlReportPath, renderPackageHtml(packageModel), 'utf8');
     }
-    reportLines.push('');
-    await fs.outputFile(packageReportPath, reportLines.join('\n'), 'utf8');
 
     if (options.json) {
       await emitJson(options, {
@@ -865,11 +896,13 @@ async function runValidatePackage(pkgInput, options = {}) {
           compliance: p.compliance || [],
           ...(p.error ? { error: p.error } : {}),
           ...(p.examples ? { examples: p.examples } : {}),
+          ...(options.html ? { htmlReportPath: path.relative(pkgWorkdir, htmlPathFor(p.reportPath)) } : {}),
         })),
         pass: errored === 0 && nonCompliant === 0,
         packageReportPath: path.relative(pkgWorkdir, packageReportPath),
         tool: toolInfo(),
         euPackages: euPackagesInfo,
+        ...(packageHtmlReportPath ? { packageHtmlReportPath: path.relative(pkgWorkdir, packageHtmlReportPath) } : {}),
       }, log);
     }
 
@@ -881,6 +914,7 @@ async function runValidatePackage(pkgInput, options = {}) {
     if (nonCompliant > 0) out(chalk.yellow(`  Non-compliant:  ${nonCompliant}`));
     if (errored > 0) out(chalk.red(`  Errors:         ${errored}`));
     out(`\n  Package report: ${packageReportPath}`);
+    if (packageHtmlReportPath) out(`  HTML report:    ${packageHtmlReportPath}`);
     out(`  Artifacts:      ${pkgWorkdir}\n`);
 
     setExitCode(outcomeExitCode({ failOnNoncompliant: options.failOnNoncompliant, nonCompliant, errored }));
@@ -912,7 +946,7 @@ async function runValidatePackage(pkgInput, options = {}) {
   summary.total = profilesToValidate.length;
 
   const recordError = async (canonical, slug, message) => {
-    const reportPath = await writeErrorReport(slug, canonical, packageSpec, message, pkgWorkdir);
+    const reportPath = await writeErrorReport(slug, canonical, packageSpec, message, pkgWorkdir, { html: !!options.html, meta });
     summary.failed++;
     summary.profiles.push({ canonical, slug, pass: false, reportPath, error: message });
     log(chalk.red(`  ❌ ${canonical.split('/').pop()}: ${message}`));
@@ -1008,6 +1042,7 @@ async function runValidatePackage(pkgInput, options = {}) {
   }
 
   const resultMap = new Map(batchResults.map(r => [r.fileName, r]));
+  const htmlBySlug = new Map(); // slug → { model, path } of the profile's HTML report (for --examples)
 
   // 7. Post-process each profile
   for (const prep of prepared) {
@@ -1020,7 +1055,7 @@ async function runValidatePackage(pkgInput, options = {}) {
     }
 
     try {
-      const { compliance, reportPath } = await postProcessProfile({
+      const { compliance, reportPath, htmlReportPath, reportModel } = await postProcessProfile({
         pkgDir,
         profile,
         canonical,
@@ -1034,6 +1069,7 @@ async function runValidatePackage(pkgInput, options = {}) {
         options,
       });
 
+      if (htmlReportPath) htmlBySlug.set(slug, { model: reportModel, path: htmlReportPath });
       const pass = compliance.every(c => c.pass);
       summary.success++;
       summary.profiles.push({ canonical, slug, pass, reportPath, compliance });
@@ -1062,6 +1098,7 @@ async function runValidatePackage(pkgInput, options = {}) {
         canonical,
         packageSpec,
         mainReportPath: entry && !entry.error ? entry.reportPath : null,
+        html: entry && !entry.error ? htmlBySlug.get(slug) ?? null : null,
         debug: !!options.debug,
         verbose: !!options.verbose,
         log,
@@ -1074,11 +1111,12 @@ async function runValidatePackage(pkgInput, options = {}) {
   return finish();
 }
 
-module.exports = {
+export {
   runValidate,
   runValidateBatchFile,
   runValidatePackage,
   // exported for tests
   selectEuProfiles,
+  addExamplesToHtml,
   isInteractive,
 };

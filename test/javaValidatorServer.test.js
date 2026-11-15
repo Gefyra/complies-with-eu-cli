@@ -1,12 +1,11 @@
-'use strict';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const path = require('node:path');
+import { parseOperationOutcome } from '../src/lib/javaValidatorServer.js';
 
-const { parseOperationOutcome } = require('../src/lib/javaValidatorServer');
-
-const oo = require(path.join(__dirname, 'fixtures', 'operation-outcome.json'));
+const oo = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'operation-outcome.json'), 'utf8'));
 
 test('parseOperationOutcome: non-OperationOutcome input gives no summary', () => {
   assert.deepEqual(parseOperationOutcome(null), { summary: null, issues: [] });
