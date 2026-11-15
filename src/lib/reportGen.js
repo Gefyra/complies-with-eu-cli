@@ -256,7 +256,27 @@ async function generateReport(opts) {
   }
 
   // ── Section 4: Automatically resolved constraints ────────────────────────
-  const autoSatisfied = opts.autoSatisfiedConstraints ?? [];
+  const autoResolved = opts.autoSatisfiedConstraints ?? [];
+  const autoSatisfied = autoResolved.filter(i => i.kind !== 'type-slice');
+  const typeSlices = autoResolved.filter(i => i.kind === 'type-slice');
+  if (typeSlices.length > 0) {
+    lines.push('## ℹ️ Optional EU type slices not allowed in this profile');
+    lines.push('');
+    lines.push(
+      'The validator reported these optional type slices of the EU profile as missing. ' +
+      'This profile does not allow the type at all, which is a permitted restriction, ' +
+      'so they were excluded from the compliance result.'
+    );
+    lines.push('');
+    lines.push('| EU Profile | EU slice | Type | Details |');
+    lines.push('|-----------|----------|------|---------|');
+    for (const item of typeSlices) {
+      lines.push(
+        `| ${mdCell(mdText(shortName(item.euCanonical)))} | ${mdCell(mdCode(item.basePath))} | ${mdCell(mdCode(item.type))} | ${mdCell(mdText(item.matchedChild))} |`
+      );
+    }
+    lines.push('');
+  }
   if (autoSatisfied.length > 0) {
     lines.push('## ℹ️ Automatically resolved constraints');
     lines.push('');

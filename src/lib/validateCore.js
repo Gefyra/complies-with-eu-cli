@@ -213,8 +213,11 @@ async function postProcessProfile({
   try {
     const rawNonCompliantMap = collectNonCompliant(parsed.issues);
     euSdByCanonical = await loadEuSds(euPackageDirs, euCanonicals);
+    // A snapshot generation error means the validator did not really evaluate the
+    // claims; never auto-resolve anything in that case.
+    const snapshotOk = !parsed.issues.some(i => /^ERROR_(GENERATING|PROCESSING)_SNAPSHOT$/.test(i.msgId || ''));
     ({ filteredMap: filteredNonCompliantMap, satisfied: autoSatisfiedConstraints } =
-      evaluateExistsOrConstraints({ inputSd: profile, euSdByCanonical, nonCompliantMap: rawNonCompliantMap }));
+      evaluateExistsOrConstraints({ inputSd: profile, euSdByCanonical, nonCompliantMap: rawNonCompliantMap, snapshotOk }));
   } catch {
     // non-fatal
     filteredNonCompliantMap = undefined;
