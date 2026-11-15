@@ -1,0 +1,9 @@
+  Validate /home/user/.complies-with-eu/workdir/hl7_eu_fhir_laboratory_StructureDefinition_Observation-resultslab-eu-lab-modified.json
+Done. Times: Loading: 00:16.498, validation: 00:06.861. Memory = 1Gb
+Success: 0 errors, 1 warnings, 4 notes
+  Information @ StructureDefinition (line 1, col2): Validate resource against profile http://hl7.org/fhir/StructureDefinition/StructureDefinition|4.0.1 {VALIDATION_VAL_PROFILE_SIGNPOST}
+  Warning @ StructureDefinition.jurisdiction[0].coding[0].system (line 43, col6): A definition for CodeSystem 'http://unstats.un.org/unsd/methods/m49/m49.htm' could not be found, so the code cannot be validated, validating against Base FHIR Standard {UNKNOWN_CODESYSTEM}
+  Information @ StructureDefinition.snapshot.element[4].binding.extension[0] (line 355, col14): The extension http://hl7.org/fhir/StructureDefinition/elementdefinition-maxValueSet|5.4.0 is deprecated with the note: 'Use additionalBinding extension or element instead', validating against Base FHIR Standard {MSG_DEPENDS_ON_DEPRECATED_NOTE}
+  Information @ StructureDefinition.differential.element[8].slicing.discriminator[0] (line 7153, col14): The discriminator type 'pattern' is deprecated in R5+. For future compatibility, you could consider using type=value with a pattern[x] instead (if this is not an inherited slicing) {SD_PATH_SLICING_DEPRECATED}
+  Information @ StructureDefinition.snapshot.element[45].slicing.discriminator[0] (line 2268, col14): The discriminator type 'pattern' is deprecated in R5+. For future compatibility, you could consider using type=value with a pattern[x] instead (if this is not an inherited slicing) {SD_PATH_SLICING_DEPRECATED}
+Done. Times: Loading: 00:16.498, validation: 00:06.861. Max Memory = 3Gb
