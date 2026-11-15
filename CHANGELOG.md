@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- README: the disk space requirement is now about 2 GB instead of 1 GB, based on a measured clean installation.
+
 ### Fixed
 
 - Package mode starts the HL7 FHIR Validator with the `server` command instead of the deprecated `-server` option, which removes the warning "The option '-server' is no longer in use".

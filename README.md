@@ -73,7 +73,7 @@ You get a per-EU-profile verdict (fulfilled / not fulfilled) and a report that e
 |-------------|---------|
 | Node.js | 20 or newer |
 | Java | **21 or newer** on `PATH` or via `JAVA_HOME` (for example [Eclipse Temurin](https://adoptium.net)). The HL7 validator needs Java 17, but the pinned `fhir-pkg-tool` is built for Java 21. |
-| Disk | About 1 GB free for the tools, the EU packages and the FHIR package cache (`~/.fhir/packages`) |
+| Disk | About 2 GB free: roughly 330 MB for the tools in `~/.complies-with-eu` and 1.5 GB or more for the FHIR package cache (`~/.fhir/packages`), which keeps growing with every package you validate |
 | Memory | 2 to 4 GB RAM for the validator JVM |
 | Network | Outbound HTTPS to GitHub (tool downloads during `init`), the FHIR package registry (packages and their dependencies) and, for `search <canonical>`, simplifier.net |
 
