@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation: README reviewed against the code; corrected the obligation check (SHALL and SHOULD), auto-resolution of optional EU type slices, report sections, EU counterpart order in package mode, exit codes, troubleshooting messages, environment variables, limitations and the GitHub Actions example (current action versions, CLI 2.0.1). CONTRIBUTING repository layout and the bug report template updated.
+
 ### Fixed
 
 - Obligation check: `SHOULD:able-to-populate` violations were already evaluated (and make the EU profile fail, like `SHALL`), but were listed under the heading "SHALL:able-to-populate". The section is now called "Obligation Check (able-to-populate)" and lists SHALL and SHOULD violations under separate headings, in the Markdown and the HTML report.

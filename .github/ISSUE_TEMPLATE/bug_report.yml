@@ -29,7 +29,7 @@ body:
     attributes:
       label: CLI version
       description: Output of `complies-with-eu --version`
-      placeholder: "1.2.0"
+      placeholder: "2.0.1"
     validations:
       required: true
   - type: input

@@ -8,9 +8,11 @@ By participating you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md). 
 
 | Path | Content |
 |------|---------|
-| `bin/`, `src/` | The `complies-with-eu` CLI (Node.js, ES modules) |
+| `bin/`, `src/` | The `complies-with-eu` / `cwe` CLI (Node.js, ES modules) |
 | `eu-packages.json` | Pinned EU FHIR packages used by the CLI |
+| `tools.json` | Pinned versions, download URLs and SHA-256 checksums of the HL7 FHIR Validator and fhir-pkg-tool |
 | `java-validator-parameter.md` | Extra parameters passed to the HL7 FHIR Validator |
+| `test/` | Tests (`node --test`) and fixtures |
 
 ## Development setup
 
