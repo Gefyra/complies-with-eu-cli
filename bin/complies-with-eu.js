@@ -35,10 +35,11 @@ Exit codes:
   0    success (also when profiles are non-compliant, unless --fail-on-noncompliant is set)
   1    at least one selected EU profile is not fulfilled (only with --fail-on-noncompliant)
   2    usage or operational error (Java missing, not initialised, package not found, validator crash)
-  130  cancelled with Ctrl+C in an interactive prompt
+  130  cancelled with Ctrl+C (in an interactive prompt or while the validator runs)
+  143  terminated with SIGTERM while the validator runs
 
 Environment variables:
-  COMPLIES_WITH_EU_HOME                 state directory (default ~/.complies-with-eu: tools/, workdir/, cache.json)
+  COMPLIES_WITH_EU_HOME                 state directory (default ~/.complies-with-eu: tools/, workdir/, logs/, cache.json)
   COMPLIES_WITH_EU_WORKDIR              reports and intermediate files (default <home>/workdir)
   COMPLIES_WITH_EU_VALIDATOR_VERSION    override the pinned HL7 validator version ("latest" or a tag; not checksum-verified)
   COMPLIES_WITH_EU_FHIR_PKG_TOOL_VERSION override the pinned fhir-pkg-tool version (not checksum-verified)
@@ -46,6 +47,7 @@ Environment variables:
   JAVA_HOME                             Java installation to use (otherwise "java" on PATH)
   GITHUB_TOKEN                          sent to GitHub when downloading tools (avoids rate limits)
   DEBUG                                 print stack traces on errors
+  FORCE_COLOR                           keep colored output when stdout/stderr is redirected
 `;
 
 function buildProgram() {

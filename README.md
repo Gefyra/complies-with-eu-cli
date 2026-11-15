@@ -52,10 +52,10 @@ find the EU profiles of the same resource type (from the pinned HL7 Europe packa
 add a compliesWithProfile extension for each selected EU profile
         │
         ▼
-HL7 FHIR Validator  ──►  obligation check  ──►  constraint auto-resolution
+HL7 FHIR Validator  ──►  obligation check  ──►  auto-resolution (constraints, optional type slices)
         │
         ▼
-Markdown report  (+ JSON for CI)
+Markdown report  (+ HTML with --html, JSON for CI)
 ```
 
 You get a per-EU-profile verdict (fulfilled / not fulfilled) and a report that explains each failure.
@@ -63,7 +63,8 @@ You get a per-EU-profile verdict (fulfilled / not fulfilled) and a report that e
 ## Features
 
 - **One command per profile, or a whole package at once.** `validate` checks one profile; `validate-batch` checks a list of profiles or every profile of a package that has EU counterparts.
-- **Checks more than the validator does.** A static obligation check flags elements that an EU profile marks as `SHALL:able-to-populate` but your profile prohibits or does not flag as MustSupport.
+- **Checks more than the validator does.** A static obligation check flags elements that an EU profile marks as `SHALL:able-to-populate` or `SHOULD:able-to-populate` but your profile prohibits (`max = 0`), does not contain or does not flag as MustSupport. Both strengths make the EU profile fail and appear under separate headings in the report.
+- **Fewer false positives.** Validator findings that do not count against your profile are resolved automatically and listed separately in the report: `.exists() or …` constraints guaranteed by your minimum cardinalities, and missing optional EU type slices for a type your profile does not allow at all (a permitted restriction).
 - **Example instances.** `--examples` validates the package's example resources against the selected EU profiles.
 - **Shareable HTML report.** `--html` writes a self-contained, clearly laid out HTML report next to the Markdown report, for reviews and workshops.
 - **CI ready.** Non-interactive flags, JSON output, an opt-in failing exit code, and a pinned, checksum-verified toolchain.
@@ -72,7 +73,7 @@ You get a per-EU-profile verdict (fulfilled / not fulfilled) and a report that e
 
 | Requirement | Details |
 |-------------|---------|
-| Node.js | 22.22.2 or a newer 22.x, 24.15.0 or a newer 24.x, or 26 and later (the range supported by inquirer 14; odd-numbered releases such as 23 and 25 are not supported) |
+| Node.js | 22.22.2 or a newer 22.x, 24.15.0 or a newer 24.x, or 26 and later (odd-numbered releases such as 23 and 25 are not supported) |
 | Java | **21 or newer** on `PATH` or via `JAVA_HOME` (for example [Eclipse Temurin](https://adoptium.net)). The HL7 validator needs Java 17, but the pinned `fhir-pkg-tool` is built for Java 21. |
 | Disk | About 2 GB free: roughly 330 MB for the tools in `~/.complies-with-eu` and 1.5 GB or more for the FHIR package cache (`~/.fhir/packages`), which keeps growing with every package you validate |
 | Memory | 2 to 4 GB RAM for the validator JVM |
@@ -142,7 +143,7 @@ Done!
 
 This final result is written to stdout. All progress output (status lines, spinners, the list of EU profiles found) goes to stderr, so it keeps its order when the output is redirected or collected by CI or Docker. With `--json`, stdout carries only the JSON document and the final result goes to stderr as well.
 
-Open the Markdown report to see why a profile is not fulfilled (see [Reading the results](#reading-the-results)).
+Open the Markdown report to see why a profile is not fulfilled (see [Reading the results](#reading-the-results)). Add `--html` to also get a self-contained `…-report.html` next to it (printed as `HTML report: <path>`), handy for reviews and workshops. The CLI prints absolute paths; `~` above stands for your home directory.
 
 A second example with a German package (gematik ISiK):
 
@@ -153,7 +154,7 @@ complies-with-eu validate de.gematik.isik@5.1.1 \
 
 ## Commands
 
-`<package>` always has the form `name[@version|#version]`. Without a version, `current` is used, which resolves to the newest version installed in `~/.fhir/packages`.
+`<package>` always has the form `name[@version|#version]`, where `name` is a FHIR package id with at least two dot-separated parts (for example `hl7.fhir.uv.ips`). Other arguments are rejected with a short hint (`search` also accepts a canonical URL, `validate-batch` a todo file). Without a version, `current` is used, which resolves to the newest version installed in `~/.fhir/packages`.
 
 | Command | Purpose |
 |---------|---------|
@@ -203,9 +204,9 @@ What happens:
 
 1. The package is resolved from `~/.fhir/packages`, or downloaded via `fhir-pkg-tool` if it is missing or has no snapshots.
 2. The profile with the given canonical is looked up; its resource type determines the candidate EU profiles.
-3. The EU profiles are selected: `--eu-profiles`, else `--all-counterparts`, else an interactive checklist (pre-filled from your last selection for that canonical). Without a terminal, one of the two flags is required.
+3. The EU profiles are selected: `--eu-profiles`, else `--all-counterparts`, else an interactive checklist (pre-filled from your last selection for that canonical). Without a terminal, or with `--json`, one of the two flags is required.
 4. A copy of the profile with one `compliesWithProfile` extension per selected EU profile is validated by the HL7 FHIR Validator (locally, with the pinned version from `tools.json`).
-5. The obligation check and constraint auto-resolution run, and a Markdown report is written (with `--html` also an HTML report).
+5. The obligation check (`SHALL:able-to-populate` and `SHOULD:able-to-populate`) runs, and validator findings that do not count against the profile are auto-resolved: `.exists() or …` constraints guaranteed by minimum cardinalities, and missing optional EU type slices whose type the profile does not allow. Then a Markdown report is written (with `--html` also an HTML report).
 
 | Option | Description |
 |--------|-------------|
@@ -287,13 +288,16 @@ complies-with-eu validate-batch hl7.fhir.uv.ips@2.0.0
 complies-with-eu validate-batch hl7.fhir.uv.ips@2.0.0 --mapping mapping.json --json --output result.json
 ```
 
-The EU counterparts are chosen in this order:
+The EU counterparts are chosen per profile in this order:
 
-1. `--mapping <file>`
-2. `--all-counterparts`
-3. an existing `<workdir>/<pkgSlug>/mapping.json` (ignored with `--reselect`)
-4. interactive prompts (terminal only, not with `--json`); a profile with exactly one EU counterpart is selected without a prompt
-5. otherwise the run fails and points to `--mapping` and `--all-counterparts`
+1. `--mapping <file>` (a saved `mapping.json` is then not read)
+2. otherwise a saved `<workdir>/<pkgSlug>/mapping.json` (ignored with `--reselect`). It is written after every run, so it also takes precedence over `--all-counterparts` for the profiles it covers.
+3. `--all-counterparts` for profiles that have no entry yet
+4. a profile with exactly one EU counterpart is selected without a prompt
+5. interactive prompts (terminal only, not with `--json`)
+6. otherwise the run fails and points to `--mapping` and `--all-counterparts`
+
+Use `--reselect` together with `--all-counterparts` to ignore a saved `mapping.json`.
 
 Mapping file format (also the format of the saved `mapping.json`):
 
@@ -321,7 +325,8 @@ All artifacts of a package run live in `<workdir>/<pkgSlug>/`, where `pkgSlug` i
   <slug>-report.md        one report per profile
   <slug>-report.html      one HTML report per profile (with --html)
   modified/               profiles with the added compliesWithProfile extensions
-  examples/<slug>/        example instances and reports (with --examples)
+  validator-server.log    full output of the local validator server (removed by clean)
+  examples/<slug>/        example instances and reports (with --examples; raw log: _batch-raw.log)
 ```
 
 ### search
@@ -388,7 +393,8 @@ Deletes everything in the workdir except Markdown and HTML reports (`*-report.md
 |---------|---------|
 | **compliesWithProfile — Overview** | How many of the checked EU profiles are fulfilled, with a ✅ / ❌ row per EU profile. An EU profile counts as not fulfilled if the validator rejects the claim **or** the obligation check finds a violation. |
 | **Non-Compliant Profiles — Details** | Per failed EU profile, a table of element paths and the issue the validator reported (missing constraints, cardinality conflicts, slicing problems). Identical rows are shown once with "(reported N×)". The validator names no element for a missing constraint; the path is taken from the EU profile when exactly one of its elements declares the constraint, otherwise it is shown as "—". |
-| **Obligation Check (SHALL:able-to-populate)** | The HL7 validator does not evaluate obligations or MustSupport. For every element that an EU profile's differential marks `SHALL:able-to-populate`, this check looks at your profile's snapshot and reports the element if it is not found, has `max: 0`, or is not MustSupport. |
+| **Obligation Check (able-to-populate)** | The HL7 FHIR Validator does not evaluate obligations or MustSupport. For every element that an EU profile's differential marks `SHALL:able-to-populate` or `SHOULD:able-to-populate`, this check looks at your profile's snapshot and reports the element if it is not found, has `max: 0`, or is not MustSupport. Findings are listed per EU profile under separate **SHALL:able-to-populate** and **SHOULD:able-to-populate** headings; violations of either strength make the EU profile fail. |
+| **Optional EU type slices not allowed in this profile** | Optional type slices of an EU profile (for example `value[x]:valueQuantity`) that the validator reports as missing, although your profile does not allow that type at all. Restricting the allowed types is permitted, so these slices are excluded from the verdict. Required slices (`min ≥ 1`) are not resolved and stay in the validator findings. |
 | **Automatically resolved constraints** | EU `.exists() or …` constraints that your profile does not declare, but that are guaranteed by its minimum cardinalities (unsliced elements with `min ≥ 1`). They are excluded from the verdict. |
 | **Other Validation Results** | Collapsible list of all other validator messages (fatal, errors, warnings, information) that are not about `compliesWithProfile`. |
 | **Example Validation** | Only with `--examples`: a status table per example file with error and warning counts, and a link to the detailed example report. |
@@ -402,7 +408,7 @@ The **example report** (`<workdir>/examples/<slug>/<slug>-examples-report.md`) l
 With `--html` (`validate`, `validate-batch`, `search`), a `<slug>-report.html` is written next to each Markdown report; in package mode also `package-report.html`. It is built from the same data as the Markdown report, so both always show the same findings, but it is laid out for reading on screen and sharing. Texts are kept to short labels:
 
 - a header with profile, package, date, tool and validator version and the EU packages used, and a verdict banner with summary tiles (EU profiles checked, fulfilled, not fulfilled, obligation violations);
-- one card per EU profile with a PASS / FAIL badge, the validator findings (path, issue, how often it was reported), obligation violations, automatically resolved constraints and, as information, optional EU type slices that do not apply because the profile does not allow the type ("Not applicable in this profile");
+- one card per EU profile with a PASS / FAIL badge, the validator findings (path, issue, how often it was reported), obligation violations grouped into SHALL:able-to-populate and SHOULD:able-to-populate, automatically resolved constraints and, as information, optional EU type slices that do not apply because the profile does not allow the type ("Not applicable in this profile");
 - the other validator messages, collapsed and grouped by severity with counts;
 - with `--examples`: an "Examples" section on the same page with one collapsed entry per example instance (file, id, OK / FAIL, error and warning counts, the validator issues) and a link to the Markdown examples report;
 - package mode: an overview table of all profiles with their EU counterparts, verdicts and relative links to the per-profile HTML and Markdown reports.
@@ -425,14 +431,14 @@ With `--json`, stdout contains only the JSON document (progress goes to stderr);
   "package": "hl7.fhir.uv.ips@2.0.0",
   "canonical": "http://hl7.org/fhir/uv/ips/StructureDefinition/Patient-uv-ips",
   "reportPath": "/home/me/.complies-with-eu/workdir/hl7_org_fhir_uv_ips_StructureDefinition_Patient-uv-ips-report.md",
-  "tool": { "name": "@gefyra/complies-with-eu", "version": "2.0.0", "validatorVersion": "7.0.5" },
+  "tool": { "name": "@gefyra/complies-with-eu", "version": "2.0.1", "validatorVersion": "7.0.5" },
   "validator": { "mode": "local", "summary": "…" },
   "euPackages": [ { "packageName": "hl7.fhir.eu.base", "version": "2.0.1" } ]
 }
 ```
 
 - `report` is the full Markdown report; `validator.mode` is always `local`; `validator.summary` is the validator's result summary line.
-- With `--examples`, an `examples` object is added: `{ "reportPath", "total", "passed", "results": [ { "fileName", "pass", "errors", "warnings", "summary" } ] }`.
+- With `--examples`, an `examples` object is added: `{ "reportPath", "total", "passed", "results": [ { "fileName", "pass", "errors", "warnings", "summary" } ] }`; a result whose example could not be validated also carries `"error"`. `validator.summary` and `results[].summary` are `null` if the validator printed no summary line.
 - With `--html`, `htmlReportPath` (absolute path of the HTML report) is added.
 
 **`validate-batch` (todo-file mode)**
@@ -495,7 +501,7 @@ A profile that could not be validated has `"error": "<message>"` and `"pass": fa
 | `0` | Success, **also when profiles are non-compliant**, unless `--fail-on-noncompliant` is set |
 | `1` | At least one selected EU profile is not fulfilled (only with `--fail-on-noncompliant`) |
 | `2` | Usage or operational error: invalid arguments, Java missing, not initialised, package or profile not found, validator crash. In batch mode with `--fail-on-noncompliant`, also when a profile could not be validated. |
-| `130` | Cancelled: Ctrl+C was pressed in an interactive prompt (the CLI prints `Cancelled.` on stderr) |
+| `130` | Cancelled with Ctrl+C: in an interactive prompt (the CLI prints `Cancelled.` on stderr) or while the validator is running (the Java processes are stopped first). A SIGTERM while the validator is running ends the CLI with `143`. |
 
 The default of `0` for non-compliant results is deliberate and stable, so existing pipelines that read the JSON keep working. Add `--fail-on-noncompliant` to make a CI job fail on non-compliance.
 
@@ -509,23 +515,23 @@ jobs:
   complies-with-eu:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
 
       - name: Cache tools and FHIR packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.complies-with-eu/tools
             ~/.fhir/packages
-          key: complies-with-eu-${{ runner.os }}-2.0.0
+          key: complies-with-eu-${{ runner.os }}-2.0.1
 
-      - run: npm install -g @gefyra/complies-with-eu@2.0.0
+      - run: npm install -g @gefyra/complies-with-eu@2.0.1
       - run: complies-with-eu init
 
       - name: Validate
@@ -537,7 +543,7 @@ jobs:
 
       - name: Upload reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: complies-with-eu-reports
           path: |
@@ -599,14 +605,15 @@ These parameters apply to `validate`, `validate-batch` and the local validator s
 
 | Variable | Description |
 |----------|-------------|
-| `COMPLIES_WITH_EU_HOME` | State directory (default `~/.complies-with-eu`: `tools/`, `workdir/`, `cache.json`) |
+| `COMPLIES_WITH_EU_HOME` | State directory (default `~/.complies-with-eu`: `tools/`, `workdir/`, `logs/`, `cache.json`) |
 | `COMPLIES_WITH_EU_WORKDIR` | Reports and intermediate files (default `<home>/workdir`); `--workdir` takes precedence |
 | `COMPLIES_WITH_EU_VALIDATOR_VERSION` | Override the pinned HL7 validator version (`latest` or a tag; not checksum-verified) |
 | `COMPLIES_WITH_EU_FHIR_PKG_TOOL_VERSION` | Override the pinned fhir-pkg-tool version (not checksum-verified) |
-| `VALIDATOR_SERVER_PORT` | Port of the local validator server in package mode |
+| `VALIDATOR_SERVER_PORT` | Port of the local validator server in package mode; `--server-port` takes precedence |
 | `JAVA_HOME` | Java installation to use (otherwise `java` on `PATH`) |
 | `GITHUB_TOKEN` | Sent to GitHub (only `github.com` / `api.github.com`) when downloading tools, to avoid rate limits |
 | `DEBUG` | Print stack traces on errors |
+| `FORCE_COLOR` | Keep colored output even when stdout or stderr is redirected (for example in CI logs) |
 
 ## Files and directories
 
@@ -633,7 +640,8 @@ Versions up to 1.1.x kept their state inside the installation directory (`.tools
 | `EU profile selection required, but no interactive terminal is available` | In CI or with `--json`, pass `--eu-profiles <url1,url2>` or `--all-counterparts`. |
 | `search is interactive and needs a terminal` | Use `validate` with `--eu-profiles` or `--all-counterparts` in scripts. |
 | `--output requires --json` | Add `--json`. |
-| `Package '…' could not be downloaded` | Check the package name and version (for example on [packages.fhir.org](https://packages.fhir.org)), or try `complies-with-eu search <canonical>`. |
+| `Package '…' was not found in the FHIR package registry` or `Could not download '…'` | Check the package name and version (for example on [packages.fhir.org](https://packages.fhir.org)), or try `complies-with-eu search <canonical>`. If the registry could not be reached, check your network or proxy settings. The full fhir-pkg-tool output is in `~/.complies-with-eu/logs/fhir-pkg-tool.log` (the path is printed). |
+| `'…' is not a FHIR package id` (or `… or a canonical URL` for `search`) | `validate`, `validate-batch` and `search` expect a package id such as `hl7.fhir.uv.ips@2.0.0` as their first argument; `search` also accepts a profile's canonical URL. If you passed a profile name, use the package id (and, for `validate`, the profile's canonical URL as the second argument), or find the package with `complies-with-eu search <canonical>`. |
 | Profile not found | The canonical is not in that package version. List the profiles with `complies-with-eu search <package>`. |
 | `… produced no result summary` | The validator crashed (often out of memory or a broken jar). The message shows the last lines of the validator output; open the raw log named in the message, rerun with `--verbose` (or `--debug`), or reinstall the tools with `init --force`. |
 | `FHIR Java Validator server did not finish the batch validation` | Package mode: the validator server stopped while validating (often out of memory). The message shows its exit code and the last lines of its output; the affected profiles get an error report that names `<workdir>/<package>/validator-server.log`. Give Java more memory or validate fewer profiles at once (`--type`). |
@@ -646,7 +654,7 @@ Versions up to 1.1.x kept their state inside the installation directory (`.tools
 - **FHIR R4 only.** The validator runs with `-version 4.0.1`, matching the HL7 Europe IGs.
 - **No terminology validation by default** (`-tx n/a`). Value set bindings are not checked against a terminology server.
 - **Ballot packages.** Some EU IGs are only available as ballot versions (see the table above); their profiles can still change.
-- **The verdict is as good as the validator's `compliesWithProfile` check**, which is still evolving. The obligation check only covers `SHALL:able-to-populate` in the EU profiles' differentials, and constraint auto-resolution only covers `.exists() or …` constraints guaranteed by minimum cardinalities.
+- **The verdict is as good as the validator's `compliesWithProfile` check**, which is still evolving. The obligation check only covers `SHALL:able-to-populate` and `SHOULD:able-to-populate` in the EU profiles' differentials (both count as a failure and are listed under separate headings). Auto-resolution only covers `.exists() or …` constraints guaranteed by minimum cardinalities, and missing optional EU type slices whose type your profile does not allow.
 - **EU counterparts are found by type only.** Candidates are the EU profiles with the same `type` as your profile; package mode and `search` only consider resource profiles (no extensions or data type profiles).
 - **`search <canonical>` depends on the Simplifier.net resolve page** and can break if that page changes.
 
