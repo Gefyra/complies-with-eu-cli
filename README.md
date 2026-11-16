@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-d32e22"></a>
   <a href="https://www.npmjs.com/package/@gefyra/complies-with-eu"><img alt="npm" src="https://img.shields.io/npm/v/@gefyra/complies-with-eu?color=d32e22"></a>
   <a href="https://github.com/Gefyra/complies-with-eu-cli/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Gefyra/complies-with-eu-cli/ci.yml?branch=main&label=CI"></a>
-  <img alt="Node.js ^22.22.2 || ^24.15.0 || >=26" src="https://img.shields.io/badge/node-%5E22.22.2%20%7C%7C%20%5E24.15.0%20%7C%7C%20%3E%3D26-d32e22">
+  <img alt="Node.js ^22.22.2 || ^24.15.0 || &gt;=26" src="https://img.shields.io/badge/node-%5E22.22.2%20%7C%7C%20%5E24.15.0%20%7C%7C%20%3E%3D26-d32e22">
 </p>
 
 ---
