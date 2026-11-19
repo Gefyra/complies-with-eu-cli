@@ -531,7 +531,7 @@ jobs:
             ~/.fhir/packages
           key: complies-with-eu-${{ runner.os }}-2.0.1
 
-      - run: npm install -g @gefyra/complies-with-eu@2.0.1
+      - run: npm install -g @gefyra/complies-with-eu@2.0.2
       - run: complies-with-eu init
 
       - name: Validate
