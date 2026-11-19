@@ -44,7 +44,7 @@ export function reportInput(reportPath) {
             "slice error: The min value of '0' on the path Patient.name does not comply with the value '1' from the claimed profile",
             `slice error: The constraint '${ELE1}' is defined in the claimed profile, but missing`,
             `slice error: The constraint '${NAME_EXPR}' is defined in the claimed profile, but missing`,
-            'Mismatch in slicing at Patient.identifier: none',
+            'Mismatch in slicing at Patient.identifier: no slicing found when the claimed profile has slicing',
             'slice error: weird | detail <img src=x onerror=alert(1)>',
           ],
         },

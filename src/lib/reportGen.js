@@ -5,6 +5,7 @@ import {
   shortName,
   isoDate,
   parseSliceIssue,
+  slicingIssueParts,
   buildDetailItems,
   buildReportModel,
   buildPackageModel,
@@ -49,7 +50,7 @@ function mdIssue(issue) {
     case 'constraint':
       return `Constraint missing: ${mdCode(issue.expression)}`;
     case 'slicing':
-      return 'No slicing found, target profile expects slicing';
+      return slicingIssueParts(issue).map(p => (typeof p === 'string' ? mdText(p) : mdCode(p.code))).join('');
     default:
       return mdText(issue.text);
   }

@@ -32,7 +32,9 @@ function isoDate(date = new Date()) {
  * issue.kind is one of:
  * - 'cardinality' `{ bound: 'min'|'max', actual, expected }`
  * - 'constraint'  `{ expression }`
- * - 'slicing'     `{}`
+ * - 'slicing'     `{ reason, slice?, discriminator?, values?, actual?, expected?, text? }`
+ *                 reason: 'unsliced' | 'extraSlice' | 'noSlice' | 'rules' | 'order' |
+ *                 'discriminator' | 'other' (see parseSlicingReason)
  * - 'other'       `{ text }`
  *
  * The validator's "constraint ... missing" message carries no element path. When
@@ -66,12 +68,66 @@ function parseSliceIssue(raw, euSd = null) {
     };
   }
 
-  const slicing = text.match(/Mismatch in slicing at (\S+):/);
+  const slicing = text.match(/^Mismatch in slicing(?: rules)? at (\S+):\s+(.*)$/);
   if (slicing) {
-    return { path: slicing[1], issue: { kind: 'slicing' } };
+    return { path: slicing[1], issue: { kind: 'slicing', ...parseSlicingReason(slicing[2]) } };
   }
 
   return { path: null, issue: { kind: 'other', text } };
+}
+
+/** Strips Java wrappers such as "UriType[http://x]" from discriminator values. */
+function cleanSlicingValues(values) {
+  return String(values).replace(/\b[A-Za-z]+Type\[([^\]]*)\]/g, '$1');
+}
+
+/**
+ * Structures the reason part of the validator's PROFILE_COMPLIES_WITH_SLICING_*
+ * messages ("Mismatch in slicing[ rules] at <path>: <reason>"). Unknown wordings
+ * keep their text (reason 'other'), so nothing the validator says gets lost.
+ *
+ * @param {string} reason
+ * @returns {object}
+ */
+function parseSlicingReason(reason) {
+  const text = String(reason ?? '').trim().replace(/\.$/, '');
+  if (/^no slicing found\b/i.test(text)) return { reason: 'unsliced' };
+  let m = text.match(/^extra slice '([^']+)' not found in the claimed profile/i);
+  if (m) return { reason: 'extraSlice', slice: m[1] };
+  m = text.match(/^no slice found for the discriminator (\S+) with the values (.+)$/i);
+  if (m) return { reason: 'noSlice', discriminator: m[1], values: cleanSlicingValues(m[2]) };
+  m = text.match(/^'([^']*)' when the claimed profile has '([^']*)'/i);
+  if (m) return { reason: 'rules', actual: m[1], expected: m[2] };
+  if (/^not ordered when the claimed profile has ordered/i.test(text)) return { reason: 'order' };
+  m = text.match(/^the discriminator '([^']+)' was not found/i);
+  if (m) return { reason: 'discriminator', discriminator: m[1] };
+  return { reason: 'other', text };
+}
+
+/**
+ * Wording of a slicing issue as parts: plain strings and `{ code }` spans, so the
+ * Markdown and HTML renderers say exactly the same thing.
+ *
+ * @param {object} issue - A 'slicing' issue from parseSliceIssue
+ * @returns {Array<string|{code: string}>}
+ */
+function slicingIssueParts(issue) {
+  switch (issue.reason) {
+    case 'unsliced':
+      return ['No slicing found, target profile expects slicing'];
+    case 'extraSlice':
+      return ['Slice ', { code: issue.slice }, ' is not defined in the target profile'];
+    case 'noSlice':
+      return ['No matching slice for the target profile\'s slice (discriminator ', { code: issue.discriminator }, ', value ', { code: issue.values }, ')'];
+    case 'rules':
+      return ['Slicing rules are ', { code: issue.actual }, ', target profile has ', { code: issue.expected }];
+    case 'order':
+      return ['Slicing is not ordered, target profile requires ordered slices'];
+    case 'discriminator':
+      return ['Discriminator ', { code: issue.discriminator }, ' of the target profile not found'];
+    default:
+      return [`Slicing mismatch: ${issue.text ?? ''}`];
+  }
 }
 
 /**
@@ -358,6 +414,8 @@ export {
   shortName,
   isoDate,
   parseSliceIssue,
+  parseSlicingReason,
+  slicingIssueParts,
   buildDetailItems,
   buildReportModel,
   buildPackageModel,

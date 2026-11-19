@@ -63,8 +63,28 @@ test('parseSliceDetail: min/max, constraint, slicing and fallback', () => {
     ['—', 'Constraint missing: `a.exists() or b.exists()`'],
   );
   assert.deepEqual(
-    parseSliceDetail('Mismatch in slicing at Patient.identifier: none'),
+    parseSliceDetail('Mismatch in slicing at Patient.identifier: no slicing found when the claimed profile has slicing'),
     ['`Patient.identifier`', 'No slicing found, target profile expects slicing'],
+  );
+  assert.deepEqual(
+    parseSliceDetail("slice error: Mismatch in slicing at Condition.abatement[x]: extra slice 'abatementAge' not found in the claimed profile"),
+    ['`Condition.abatement[x]`', 'Slice `abatementAge` is not defined in the target profile'],
+  );
+  assert.deepEqual(
+    parseSliceDetail('Mismatch in slicing at Patient.identifier: no slice found for the discriminator value:system with the values UriType[http://x/sys]'),
+    ['`Patient.identifier`', "No matching slice for the target profile's slice (discriminator `value:system`, value `http://x/sys`)"],
+  );
+  assert.deepEqual(
+    parseSliceDetail("Mismatch in slicing rules at Patient.identifier: 'open' when the claimed profile has 'closed'"),
+    ['`Patient.identifier`', 'Slicing rules are `open`, target profile has `closed`'],
+  );
+  assert.deepEqual(
+    parseSliceDetail('slice error: Mismatch in slicing at Observation.value[x]:valueBoolean: no slice found for the discriminator type:$this with the values boolean'),
+    ['`Observation.value[x]:valueBoolean`', "No matching slice for the target profile's slice (discriminator `type:$this`, value `boolean`)"],
+  );
+  assert.deepEqual(
+    parseSliceDetail('Mismatch in slicing at Patient.identifier: something new'),
+    ['`Patient.identifier`', 'Slicing mismatch: something new'],
   );
   assert.deepEqual(parseSliceDetail('slice error: something <odd>'), ['—', 'something &lt;odd&gt;']);
 });
