@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { SEVERITIES, groupObligationsByStrength } from './reportModel.js';
+import { SEVERITIES, groupObligationsByStrength, slicingIssueParts } from './reportModel.js';
 
 /**
  * HTML renderer for the report model (see reportModel.js).
@@ -254,7 +254,7 @@ function issueText(issue) {
     case 'constraint':
       return `Constraint missing: ${code(issue.expression)}`;
     case 'slicing':
-      return 'No slicing found, target profile expects slicing';
+      return slicingIssueParts(issue).map(p => (typeof p === 'string' ? esc(p) : code(p.code))).join('');
     default:
       return esc(issue.text);
   }
