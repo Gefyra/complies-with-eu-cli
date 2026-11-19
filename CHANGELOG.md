@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-11-19
+
 ### Fixed
 
 - Reports: every slicing mismatch was shown as "No slicing found, target profile expects slicing", whatever the validator reported. The report now states the actual reason, e.g. "Slice `abatementAge` is not defined in the target profile", a missing slice with its discriminator and value, or different slicing rules. Unknown wordings are shown as reported by the validator.
