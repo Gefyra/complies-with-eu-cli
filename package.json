@@ -1,6 +1,6 @@
 {
   "name": "@gefyra/complies-with-eu",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "CLI that checks whether FHIR profiles comply with the HL7 Europe (EU) profiles, using the compliesWithProfile extension and the HL7 FHIR validator",
   "keywords": [
     "fhir",
