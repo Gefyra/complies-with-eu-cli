@@ -9,7 +9,7 @@ import {
   getWorkdir,
 } from '../lib/config.js';
 import { ensureTool } from '../lib/toolDownloader.js';
-import { downloadFhirPackages } from '../lib/fhirPkgTool.js';
+import { downloadFhirPackages, describeSnapshotFailures } from '../lib/fhirPkgTool.js';
 import { ensureJava, requiredJavaMajor } from '../lib/javaCheck.js';
 import { CliError } from '../lib/errors.js';
 
@@ -56,9 +56,10 @@ async function runInit(options = {}) {
 
   const spinner3 = ora('Running fhir-pkg-tool for EU packages...').start();
   try {
-    const { installed, logFile } = await downloadFhirPackages(euPackages, { verbose: !!options.verbose });
+    const { installed, snapshotFailures, logFile } = await downloadFhirPackages(euPackages, { verbose: !!options.verbose });
     const deps = installed.length > euPackages.length ? ` (${installed.length} packages incl. dependencies)` : '';
     spinner3.succeed(`All ${euPackages.length} EU packages downloaded${deps}`);
+    if (snapshotFailures.length > 0) console.log(chalk.yellow(`  ${describeSnapshotFailures(snapshotFailures)}`));
     if (logFile && !options.verbose) console.log(chalk.gray(`  fhir-pkg-tool output: ${logFile}`));
   } catch (err) {
     spinner3.fail('Failed to download EU packages');

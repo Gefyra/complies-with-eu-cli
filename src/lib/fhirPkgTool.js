@@ -26,7 +26,7 @@ async function requirePkgToolJar() {
  * Runs fhir-pkg-tool to download a FHIR package.
  * @param {string} packageSpec - e.g. "hl7.fhir.eu.base@current"
  * @param {{ verbose?: boolean }} [options] - verbose streams the tool output
- * @returns {Promise<{ installed: string[], logFile: string|null }>}
+ * @returns {Promise<{ installed: string[], snapshotFailures: Array<{file: string, reason: string}>, logFile: string|null }>}
  */
 async function downloadFhirPackage(packageSpec, options = {}) {
   const jar = await requirePkgToolJar();
@@ -37,7 +37,7 @@ async function downloadFhirPackage(packageSpec, options = {}) {
  * Runs multiple packages at once.
  * @param {Array<{packageName: string, version: string}>} packages
  * @param {{ verbose?: boolean }} [options]
- * @returns {Promise<{ installed: string[], logFile: string|null }>}
+ * @returns {Promise<{ installed: string[], snapshotFailures: Array<{file: string, reason: string}>, logFile: string|null }>}
  */
 async function downloadFhirPackages(packages, options = {}) {
   const jar = await requirePkgToolJar();
@@ -68,23 +68,30 @@ class FhirPkgToolError extends Error {
 
 /**
  * Extracts the useful facts from fhir-pkg-tool output (pure, for tests):
- * installed packages, per-package failures and the first Java exception
- * message (stack frames are dropped).
+ * installed packages, per-package failures, StructureDefinitions whose
+ * snapshot could not be generated and the first Java exception message
+ * (stack frames are dropped).
  * @param {string} output
- * @returns {{ installed: string[], failures: Array<{spec: string, reason: string}>, exception: string|null, notFound: boolean, network: boolean }}
+ * @returns {{ installed: string[], failures: Array<{spec: string, reason: string}>, snapshotFailures: Array<{file: string, reason: string}>, exception: string|null, notFound: boolean, network: boolean, unknownOption: boolean }}
  */
 function summarizeFhirPkgToolOutput(output) {
   // eslint-disable-next-line no-control-regex
   const lines = String(output).replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').split(/\r\n|\r|\n/);
   const installed = [];
   const failures = [];
+  const snapshotFailures = [];
   let exception = null;
+  let unknownOption = false;
   for (const raw of lines) {
     const line = raw.trim();
     let m = line.match(/^Installed package (\S+)/);
     if (m) { installed.push(m[1]); continue; }
     m = line.match(/^Failed to install requested package (\S+) \((.*)\)\.?/);
     if (m) { failures.push({ spec: m[1], reason: m[2].trim() }); continue; }
+    // "Snapshot generation failed for <package>#<version>/<file> (<reason>). Keeping the resource unchanged."
+    m = line.match(/^Snapshot generation failed for (\S+)(?: \((.*)\))?/);
+    if (m) { snapshotFailures.push({ file: m[1], reason: (m[2] || '').trim() }); continue; }
+    if (/^Unknown option:.*--ignore-snapshot-errors/.test(line)) { unknownOption = true; continue; }
     if (!exception && /^(Exception in thread|Caused by:|[\w.$]+(Exception|Error)\b:?)/.test(line) && !/^\s*at /.test(raw)) {
       exception = line.replace(/^Exception in thread "[^"]*"\s*/, '');
     }
@@ -93,7 +100,9 @@ function summarizeFhirPkgToolOutput(output) {
   return {
     installed,
     failures,
+    snapshotFailures,
     exception,
+    unknownOption,
     notFound: /unable to resolve package id|not found|404/i.test(text),
     network: /UnknownHost|ConnectException|SocketTimeout|timed out|No route to host|SSLHandshake|Connection refused/i.test(text),
   };
@@ -120,6 +129,33 @@ function describeFhirPkgToolFailure({ code, specs, summary, logFile }) {
   for (const r of reasons.slice(0, 5)) lines.push(`  Reason: ${r.length > 300 ? `${r.slice(0, 300)}…` : r}`);
   if (logFile) lines.push(`Full fhir-pkg-tool output: ${logFile}`);
   return lines.join('\n');
+}
+
+/**
+ * Finds the snapshot failure that belongs to a StructureDefinition file (pure, for tests).
+ * fhir-pkg-tool reports failures as "<package>#<version>/<file name>".
+ * @param {Array<{file: string, reason: string}>} snapshotFailures
+ * @param {string} filePath - path of the StructureDefinition JSON in the package cache
+ * @returns {{file: string, reason: string}|null}
+ */
+function findSnapshotFailure(snapshotFailures, filePath) {
+  const parts = String(filePath).split(/[\\/]/);
+  const fileName = parts[parts.length - 1];
+  const pkgId = parts.find(p => p.includes('#')) || null;
+  const sameFile = (snapshotFailures || []).filter(f => f.file.split('/').pop() === fileName);
+  return sameFile.find(f => pkgId && f.file.toLowerCase().startsWith(`${pkgId.toLowerCase()}/`)) || sameFile[0] || null;
+}
+
+/**
+ * One-line summary of snapshot failures for progress output (pure, for tests).
+ */
+function describeSnapshotFailures(snapshotFailures, { max = 5 } = {}) {
+  const names = snapshotFailures.map(f => f.file.split('/').pop().replace(/^StructureDefinition-/, '').replace(/\.json$/, ''));
+  const shown = names.slice(0, max).join(', ');
+  const more = names.length > max ? `, and ${names.length - max} more` : '';
+  const n = names.length;
+  return `No snapshot could be generated for ${n} StructureDefinition${n === 1 ? '' : 's'} (${shown}${more}). ` +
+    'This only matters if the profile to validate is one of them or is based on one.';
 }
 
 /**
@@ -247,8 +283,27 @@ function getFhirPkgToolLogFile() {
  * shown) and written to ~/.complies-with-eu/logs/fhir-pkg-tool.log; with
  * `verbose` it is streamed to stderr as well (stdout stays clean for --json).
  * Rejects with a FhirPkgToolError carrying a short explanation.
+ *
+ * Snapshots that cannot be generated do not fail the run: a package often
+ * contains StructureDefinitions (for example logical models) that have nothing
+ * to do with the profile to validate. They are returned as `snapshotFailures`;
+ * the caller decides whether one of them matters.
  */
-function runJar(jar, args, specs = [], { verbose = false } = {}) {
+async function runJar(jar, args, specs = [], options = {}) {
+  try {
+    return await runJarOnce(jar, [...args, IGNORE_SNAPSHOT_ERRORS], specs, options);
+  } catch (err) {
+    // A fhir-pkg-tool version selected via COMPLIES_WITH_EU_FHIR_PKG_TOOL_VERSION may not know the option.
+    if (err instanceof FhirPkgToolError && err.reason === 'unknown-option') {
+      return runJarOnce(jar, args, specs, options);
+    }
+    throw err;
+  }
+}
+
+const IGNORE_SNAPSHOT_ERRORS = '--ignore-snapshot-errors';
+
+function runJarOnce(jar, args, specs = [], { verbose = false } = {}) {
   return new Promise((resolve, reject) => {
     const userHome = os.homedir();
     const jvmArgs = [`-Duser.home=${userHome}`, '-jar', jar, ...args];
@@ -272,10 +327,11 @@ function runJar(jar, args, specs = [], { verbose = false } = {}) {
       const summary = summarizeFhirPkgToolOutput(output);
       if (code !== 0) {
         reject(new FhirPkgToolError(describeFhirPkgToolFailure({ code, specs, summary, logFile }), {
-          code, output, logFile, reason: summary.network ? 'network' : (summary.notFound ? 'not-found' : 'failed'),
+          code, output, logFile,
+          reason: summary.unknownOption ? 'unknown-option' : (summary.network ? 'network' : (summary.notFound ? 'not-found' : 'failed')),
         }));
       } else {
-        resolve({ installed: summary.installed, logFile });
+        resolve({ installed: summary.installed, snapshotFailures: summary.snapshotFailures, logFile });
       }
     });
     proc.on('error', (err) => reject(new FhirPkgToolError(`Could not start Java for fhir-pkg-tool: ${err.message}`)));
@@ -341,5 +397,7 @@ export {
   FhirPkgToolError,
   summarizeFhirPkgToolOutput,
   describeFhirPkgToolFailure,
+  findSnapshotFailure,
+  describeSnapshotFailures,
   getFhirPkgToolLogFile,
 };

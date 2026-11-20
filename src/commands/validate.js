@@ -5,7 +5,11 @@ import fs from 'fs-extra';
 
 import inquirer from 'inquirer';
 import { getWorkdir, setWorkdir, loadSelectionCache, saveSelectionCache } from '../lib/config.js';
-import { downloadFhirPackage, resolvePackageDir, packageHasSnapshots } from '../lib/fhirPkgTool.js';
+import {
+  downloadFhirPackage, resolvePackageDir, packageHasSnapshots,
+  findSnapshotFailure, describeSnapshotFailures, getFhirPkgToolLogFile,
+} from '../lib/fhirPkgTool.js';
+import { installLocalPackage } from '../lib/localPackage.js';
 import {
   findProfileByCanonical,
   findEuProfilesByType,
@@ -86,6 +90,27 @@ function validatorRunOptions(options) {
 }
 
 /**
+ * Snapshot failures of the last fhir-pkg-tool run per package spec. Only known
+ * when the package was downloaded in this process.
+ */
+const snapshotFailuresBySpec = new Map();
+
+/**
+ * Error message for a profile that still has no snapshot after its package was
+ * downloaded again. Names the reason fhir-pkg-tool gave, if it is known.
+ */
+function missingSnapshotMessage(canonical, packageSpec, filePath) {
+  const failure = findSnapshotFailure(snapshotFailuresBySpec.get(packageSpec), filePath);
+  const lines = [`No snapshot could be generated for profile '${canonical}'. The validation needs the snapshot.`];
+  if (failure && failure.reason) {
+    lines.push(`  Reason: ${failure.reason.length > 500 ? `${failure.reason.slice(0, 500)}…` : failure.reason}`);
+  }
+  lines.push('This is usually a problem in the profile or in one of its base profiles.');
+  lines.push(`Full fhir-pkg-tool output: ${getFhirPkgToolLogFile()}`);
+  return lines.join('\n');
+}
+
+/**
  * Resolves a package directory, downloading it via fhir-pkg-tool when it is
  * missing, incomplete or has no snapshots.
  */
@@ -107,8 +132,10 @@ async function ensurePackageDir(packageName, version, log, { verbose = false } =
   } catch {
     const spinner = ora(`Downloading ${packageSpec}...`).start();
     try {
-      await downloadFhirPackage(packageSpec, { verbose });
+      const { snapshotFailures } = await downloadFhirPackage(packageSpec, { verbose });
+      snapshotFailuresBySpec.set(packageSpec, snapshotFailures);
       spinner.succeed(`Package ${packageSpec} downloaded`);
+      if (snapshotFailures.length > 0) log(chalk.yellow(`  ${describeSnapshotFailures(snapshotFailures)}`));
     } catch (err) {
       spinner.fail(`Failed to download ${packageSpec}`);
       throw new CliError(
@@ -256,8 +283,9 @@ async function runValidate(pkg, canonical, options = {}) {
   // 2. Find the profile by canonical
   let spinner = ora(`Searching for profile with canonical '${canonical}'...`).start();
   let profile;
+  let profilePath;
   try {
-    ({ profile } = await findProfileByCanonical(pkgDir, canonical));
+    ({ profile, filePath: profilePath } = await findProfileByCanonical(pkgDir, canonical));
     spinner.succeed(`Found profile: ${profile.name || profile.id || canonical}`);
   } catch (err) {
     spinner.fail('Profile not found');
@@ -271,9 +299,12 @@ async function runValidate(pkg, canonical, options = {}) {
     await fs.remove(pkgDir);
     pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
     try {
-      ({ profile } = await findProfileByCanonical(pkgDir, canonical));
+      ({ profile, filePath: profilePath } = await findProfileByCanonical(pkgDir, canonical));
     } catch (err) {
       throw new CliError(err.message);
+    }
+    if (!profile.snapshot) {
+      throw new CliError(missingSnapshotMessage(canonical, packageSpec, profilePath));
     }
   }
 
@@ -501,8 +532,9 @@ async function runValidateBatchFile(jsonFile, options = {}) {
 
     // ── Step 2: Find profile by canonical ──────────────────────────────────
     let profile;
+    let profilePath;
     try {
-      ({ profile } = await findProfileByCanonical(pkgDir, canonical));
+      ({ profile, filePath: profilePath } = await findProfileByCanonical(pkgDir, canonical));
       log(chalk.gray(`  Profile found: ${profile.name || profile.id || canonical}`));
     } catch (err) {
       await fail(task, `Profile with canonical '${canonical}' not found in package ${packageSpec}: ${err.message}`);
@@ -517,9 +549,13 @@ async function runValidateBatchFile(jsonFile, options = {}) {
       try {
         pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
         pkgDirCache.set(packageSpec, pkgDir);
-        ({ profile } = await findProfileByCanonical(pkgDir, canonical));
+        ({ profile, filePath: profilePath } = await findProfileByCanonical(pkgDir, canonical));
       } catch (err) {
         await fail(task, `Snapshot regeneration failed: ${err.message}`);
+        continue;
+      }
+      if (!profile.snapshot) {
+        await fail(task, missingSnapshotMessage(canonical, packageSpec, profilePath));
         continue;
       }
     }
@@ -816,23 +852,62 @@ async function acquireLocalServer({ options, igIds, verifyCanonical, log, logFil
 }
 
 /**
+ * --local: copies a package from disk into the FHIR package cache and lets
+ * fhir-pkg-tool generate its snapshots and fetch its dependencies.
+ * @returns {Promise<{ packageName: string, version: string, pkgDir: string }>}
+ */
+async function prepareLocalPackage(localPath, log, { verbose = false } = {}) {
+  let installed;
+  try {
+    installed = await installLocalPackage(localPath);
+  } catch (err) {
+    throw new CliError(err.message);
+  }
+  const { packageName, version, pkgDir, replaced } = installed;
+  const packageSpec = `${packageName}@${version}`;
+  log(chalk.cyan(`Local package: ${installed.source}`));
+  log(chalk.gray(`  Installed as ${packageName}#${version} in the FHIR package cache${replaced ? ' (replaced the cached copy)' : ''}: ${pkgDir}`));
+
+  const spinner = ora(`Generating snapshots and resolving dependencies of ${packageSpec}...`).start();
+  try {
+    const { snapshotFailures } = await downloadFhirPackage(packageSpec, { verbose });
+    snapshotFailuresBySpec.set(packageSpec, snapshotFailures);
+    spinner.succeed(`Local package ${packageSpec} prepared`);
+    if (snapshotFailures.length > 0) log(chalk.yellow(`  ${describeSnapshotFailures(snapshotFailures)}`));
+  } catch (err) {
+    spinner.fail(`Failed to prepare local package ${packageSpec}`);
+    throw new CliError(err.message, { cause: err });
+  }
+  return { packageName, version, pkgDir };
+}
+
+/**
  * Validates all profiles in a FHIR package that have EU counterparts.
  * Supports interactive and headless modes with persistent mapping.
  *
- * @param {string} pkgInput - Package name[@version]
- * @param {object} options  - { debug, examples, json, output, mapping, allCounterparts, reselect, type, workdir, failOnNoncompliant, serverPort }
+ * @param {string} [pkgInput] - Package name[@version]; omitted with options.local
+ * @param {object} options  - { debug, examples, json, output, mapping, allCounterparts, reselect, type, workdir, failOnNoncompliant, serverPort, local }
  */
 async function runValidatePackage(pkgInput, options = {}) {
   applyCommonOptions(options);
   const { log, out } = makeLoggers(options);
-  const pkgArgError = checkPackageArgument(pkgInput);
-  if (pkgArgError) throw new CliError(pkgArgError);
+  if (options.local) {
+    if (pkgInput) {
+      throw new CliError('--local takes the package from the given path. Do not pass a package or todo file as well.');
+    }
+  } else {
+    const pkgArgError = checkPackageArgument(pkgInput);
+    if (pkgArgError) throw new CliError(pkgArgError);
+  }
 
   log(chalk.bold('\ncomplies-with-eu validate-batch (package mode)\n'));
   await ensureReady();
 
-  // 1. Parse package spec and compute workdir
-  const { packageName, version } = parsePackageSpec(pkgInput);
+  // 1. Parse package spec (or install the local package) and compute workdir
+  const local = options.local
+    ? await prepareLocalPackage(options.local, log, { verbose: !!options.verbose })
+    : null;
+  const { packageName, version } = local ?? parsePackageSpec(pkgInput);
   const packageSpec = `${packageName}@${version}`;
   const pkgSlug = `${packageName}-${version}`.replace(/\./g, '-').replace(/@/g, '-');
   const pkgWorkdir = path.join(getWorkdir(), pkgSlug);
@@ -846,8 +921,8 @@ async function runValidatePackage(pkgInput, options = {}) {
   log(chalk.cyan(`Package: ${packageSpec}`));
   log(chalk.cyan(`Workdir: ${pkgWorkdir}\n`));
 
-  // 2. Resolve/download package
-  const pkgDir = await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
+  // 2. Resolve/download package (a local package is already in the cache and is never re-downloaded)
+  const pkgDir = local ? local.pkgDir : await ensurePackageDir(packageName, version, log, { verbose: !!options.verbose });
 
   // 3. Resolve EU package directories once
   const euPackageDirs = await resolveEuPackageDirs({ log });
