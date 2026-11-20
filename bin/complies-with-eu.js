@@ -99,13 +99,15 @@ without a terminal (CI, --json) one of the two flags is required.`)
     .action(async (pkg, canonical, options) => (await import('../src/commands/validate.js')).runValidate(pkg, canonical, options));
 
   program
-    .command('validate-batch <jsonFileOrPackage>')
+    .command('validate-batch [jsonFileOrPackage]')
     .description(
       'Validate profiles in batch mode.\n' +
       '  - If the argument is an existing .json file: todo-file mode (array of { package, version, profiles[] }),\n' +
       '    all EU profiles of the matching type are used.\n' +
-      "  - Otherwise: package mode ('name[@version|#version]'): validates all profiles in the package that have EU counterparts."
+      "  - Otherwise: package mode ('name[@version|#version]'): validates all profiles in the package that have EU counterparts.\n" +
+      '  - With --local <path> (no argument): package mode for a package on disk.'
     )
+    .option('--local <path>', 'Package mode: use a FHIR package from disk (package folder or .tgz) instead of a registry package; it is installed into ~/.fhir/packages under its own name and version')
     .option('--examples', 'Also validate all example instances of the matching FHIR types')
     .option('--html', 'Also write self-contained HTML reports next to the Markdown reports (package mode: also package-report.html)')
     .option('--json', 'Output result as JSON on stdout (machine-readable, for CI use; progress goes to stderr)')
@@ -121,6 +123,10 @@ without a terminal (CI, --json) one of the two flags is required.`)
     .option('--debug', 'Print the full Java validator command and stack traces (implies --verbose)')
     .action(async (arg, options) => {
       const { runValidateBatchFile, runValidatePackage } = await import('../src/commands/validate.js');
+      if (options.local) return runValidatePackage(arg, options);
+      if (!arg) {
+        throw new CliError('validate-batch needs a todo file or a package (name[@version]), or --local <path> for a package on disk.');
+      }
       if (arg.endsWith('.json') && fs.existsSync(arg)) {
         return runValidateBatchFile(arg, options);
       }

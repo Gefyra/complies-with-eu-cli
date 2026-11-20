@@ -202,7 +202,7 @@ complies-with-eu validate [options] <package> <canonical>
 
 What happens:
 
-1. The package is resolved from `~/.fhir/packages`, or downloaded via `fhir-pkg-tool` if it is missing or has no snapshots.
+1. The package is resolved from `~/.fhir/packages`, or downloaded via `fhir-pkg-tool` if it is missing or has no snapshots. StructureDefinitions of the package or its dependencies whose snapshot cannot be generated are named in a warning; they only stop the run if the profile to validate is one of them.
 2. The profile with the given canonical is looked up; its resource type determines the candidate EU profiles.
 3. The EU profiles are selected: `--eu-profiles`, else `--all-counterparts`, else an interactive checklist (pre-filled from your last selection for that canonical). Without a terminal, or with `--json`, one of the two flags is required.
 4. A copy of the profile with one `compliesWithProfile` extension per selected EU profile is validated by the HL7 FHIR Validator (locally, with the pinned version from `tools.json`).
@@ -229,9 +229,10 @@ What happens:
 
 ```bash
 complies-with-eu validate-batch [options] <jsonFileOrPackage>
+complies-with-eu validate-batch [options] --local <path>
 ```
 
-If the argument is an existing `.json` file, it runs in **todo-file mode**. Otherwise the argument is a package (`name[@version|#version]`) and it runs in **package mode**.
+If the argument is an existing `.json` file, it runs in **todo-file mode**. Otherwise the argument is a package (`name[@version|#version]`) and it runs in **package mode**. With `--local <path>` and no argument, package mode runs for a package on disk.
 
 | Option | Description |
 |--------|-------------|
@@ -241,6 +242,7 @@ If the argument is an existing `.json` file, it runs in **todo-file mode**. Othe
 | `--output <file>` | Write JSON output to file instead of stdout (requires `--json`) |
 | `--fail-on-noncompliant` | Exit with code 1 if a selected EU profile is not fulfilled (2 if a profile could not be validated) |
 | `--workdir <dir>` | Directory for reports and intermediate files (default: `<home>/workdir`) |
+| `--local <path>` | Package mode: use a FHIR package from disk instead of a registry package (see [Local package](#local-package)) |
 | `--mapping <file>` | Package mode: load EU counterpart mapping from external JSON file (skips prompts) |
 | `--all-counterparts` | Package mode: use all matching EU profiles of the same type (no prompts) |
 | `--reselect` | Package mode: force re-prompting even if `mapping.json` exists |
@@ -328,6 +330,20 @@ All artifacts of a package run live in `<workdir>/<pkgSlug>/`, where `pkgSlug` i
   validator-server.log    full output of the local validator server (removed by clean)
   examples/<slug>/        example instances and reports (with --examples; raw log: _batch-raw.log)
 ```
+
+#### Local package
+
+`--local <path>` runs package mode for a package that is not in a registry, for example the output of your own IG build. No package argument is passed.
+
+```bash
+# The package.tgz of an IG publisher or SUSHI build
+complies-with-eu validate-batch --local ./output/package.tgz --all-counterparts
+
+# A package folder (contains package.json, or a package/ subfolder with it)
+complies-with-eu validate-batch --local ./my-package --type Patient --all-counterparts
+```
+
+`<path>` is a `.tgz`, `.tar.gz` or `.tar` file, or a folder. Name and version are read from the package's `package.json`. The package is copied to `~/.fhir/packages/<name>#<version>`; a package with the same name and version that is already in the cache is replaced. fhir-pkg-tool then generates missing snapshots and downloads the dependencies listed in `package.json`, so these must be available in a registry or already in the cache. All other options, the mapping and the artifacts work as in package mode.
 
 ### search
 
@@ -642,6 +658,7 @@ Versions up to 1.1.x kept their state inside the installation directory (`.tools
 | `--output requires --json` | Add `--json`. |
 | `Package '…' was not found in the FHIR package registry` or `Could not download '…'` | Check the package name and version (for example on [packages.fhir.org](https://packages.fhir.org)), or try `complies-with-eu search <canonical>`. If the registry could not be reached, check your network or proxy settings. The full fhir-pkg-tool output is in `~/.complies-with-eu/logs/fhir-pkg-tool.log` (the path is printed). |
 | `'…' is not a FHIR package id` (or `… or a canonical URL` for `search`) | `validate`, `validate-batch` and `search` expect a package id such as `hl7.fhir.uv.ips@2.0.0` as their first argument; `search` also accepts a profile's canonical URL. If you passed a profile name, use the package id (and, for `validate`, the profile's canonical URL as the second argument), or find the package with `complies-with-eu search <canonical>`. |
+| `No snapshot could be generated for profile '…'` | fhir-pkg-tool could not generate the snapshot of the profile to validate; the message shows its reason. This is usually a problem in the profile or in one of its base profiles (the warning after the download names all affected StructureDefinitions). The full output is in `~/.complies-with-eu/logs/fhir-pkg-tool.log`. |
 | Profile not found | The canonical is not in that package version. List the profiles with `complies-with-eu search <package>`. |
 | `… produced no result summary` | The validator crashed (often out of memory or a broken jar). The message shows the last lines of the validator output; open the raw log named in the message, rerun with `--verbose` (or `--debug`), or reinstall the tools with `init --force`. |
 | `FHIR Java Validator server did not finish the batch validation` | Package mode: the validator server stopped while validating (often out of memory). The message shows its exit code and the last lines of its output; the affected profiles get an error report that names `<workdir>/<package>/validator-server.log`. Give Java more memory or validate fewer profiles at once (`--type`). |

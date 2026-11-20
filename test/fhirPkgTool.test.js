@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { summarizeFhirPkgToolOutput, describeFhirPkgToolFailure } from '../src/lib/fhirPkgTool.js';
+import {
+  summarizeFhirPkgToolOutput, describeFhirPkgToolFailure, findSnapshotFailure, describeSnapshotFailures,
+} from '../src/lib/fhirPkgTool.js';
 import { checkPackageArgument } from '../src/lib/validateCore.js';
 
 // Real fhir-pkg-tool 0.5.0 output for an unknown package id.
@@ -72,4 +74,53 @@ test('checkPackageArgument: accepts package ids, rejects bare profile names', ()
   assert.match(msg, /https:\/\/gematik\.de\/fhir\/isik\/StructureDefinition\/ISiKPatient/);
   assert.match(msg, /simplifier\.net\/search/);
   assert.match(checkPackageArgument('ISiKPatient'), /^'ISiKPatient' is not a FHIR package id\.\n/);
+});
+
+// Real fhir-pkg-tool 0.5.0 output (shortened) for a package with logical models
+// whose snapshot cannot be generated, run with --ignore-snapshot-errors.
+const LM_REASON = 'StructureDefinition http://medmij.nl/fhir/StructureDefinition/medmij-core-lm-Base at medmij-core-lm-Base.Effective[x]: invalid constrained type Period from dateTime in http://hl7.org/fhir/StructureDefinition/Element';
+const SNAPSHOT_FAILURE_OUTPUT = [
+  'Installed package medmij.fhir.nl.r4.pathology#1.0.0-alpha.3 at /home/fhir/.fhir/packages/medmij.fhir.nl.r4.pathology#1.0.0-alpha.3',
+  'Installed package medmij.fhir.nl.r4.core#1.2.0 at /home/fhir/.fhir/packages/medmij.fhir.nl.r4.core#1.2.0',
+  `[main] ERROR org.hl7.fhir.r5.conformance.profile.ProfileUtilities - Exception generating snapshot for http://medmij.nl/fhir/StructureDefinition/medmij-core-lm-Base|1.2.0: ${LM_REASON}`,
+  `Snapshot generation failed for medmij.fhir.nl.r4.pathology#1.0.0-alpha.3/StructureDefinition-path-lm-Report.json (${LM_REASON}). Keeping the resource unchanged.`,
+  `Snapshot generation failed for medmij.fhir.nl.r4.core#1.2.0/StructureDefinition-medmij-core-lm-Base.json (${LM_REASON}). Keeping the resource unchanged.`,
+  'Done: 1031 SDs found, 17 snapshots generated, 2 failed, 17 SD files written, 463 files copied. Local: 0 SDs, 0 generated, 0 failed, 0 written.',
+  'Warning: 2 snapshot(s) could not be generated; ignored due to --ignore-snapshot-errors.',
+].join('\n');
+
+test('summarizeFhirPkgToolOutput: snapshot failures are collected, not treated as an exception', () => {
+  const s = summarizeFhirPkgToolOutput(SNAPSHOT_FAILURE_OUTPUT);
+  assert.deepEqual(s.snapshotFailures, [
+    { file: 'medmij.fhir.nl.r4.pathology#1.0.0-alpha.3/StructureDefinition-path-lm-Report.json', reason: LM_REASON },
+    { file: 'medmij.fhir.nl.r4.core#1.2.0/StructureDefinition-medmij-core-lm-Base.json', reason: LM_REASON },
+  ]);
+  assert.equal(s.installed.length, 2);
+  assert.equal(s.exception, null);
+  assert.equal(s.unknownOption, false);
+  assert.deepEqual(summarizeFhirPkgToolOutput(SUCCESS_OUTPUT).snapshotFailures, []);
+});
+
+test('summarizeFhirPkgToolOutput: detects a fhir-pkg-tool that does not know --ignore-snapshot-errors', () => {
+  const s = summarizeFhirPkgToolOutput("FHIR Package Tool starting...\n\x1b[31m\x1b[1mUnknown option: '--ignore-snapshot-errors'\x1b[21m\x1b[39m\x1b[0m\nUsage: fhir-pkg-tool");
+  assert.equal(s.unknownOption, true);
+});
+
+test('findSnapshotFailure: matches by package and file name', () => {
+  const { snapshotFailures } = summarizeFhirPkgToolOutput(SNAPSHOT_FAILURE_OUTPUT);
+  const dir = '/home/fhir/.fhir/packages/medmij.fhir.nl.r4.pathology#1.0.0-alpha.3/package';
+  assert.equal(findSnapshotFailure(snapshotFailures, `${dir}/StructureDefinition-path-lm-Report.json`).reason, LM_REASON);
+  assert.equal(findSnapshotFailure(snapshotFailures, 'C:\\Users\\x\\.fhir\\packages\\medmij.fhir.nl.r4.core#1.2.0\\package\\StructureDefinition-medmij-core-lm-Base.json').file,
+    'medmij.fhir.nl.r4.core#1.2.0/StructureDefinition-medmij-core-lm-Base.json');
+  assert.equal(findSnapshotFailure(snapshotFailures, `${dir}/StructureDefinition-path-Patient.json`), null);
+  assert.equal(findSnapshotFailure(undefined, `${dir}/StructureDefinition-path-lm-Report.json`), null);
+});
+
+test('describeSnapshotFailures: names the StructureDefinitions and caps the list', () => {
+  const { snapshotFailures } = summarizeFhirPkgToolOutput(SNAPSHOT_FAILURE_OUTPUT);
+  const msg = describeSnapshotFailures(snapshotFailures);
+  assert.match(msg, /^No snapshot could be generated for 2 StructureDefinitions \(path-lm-Report, medmij-core-lm-Base\)\./);
+  const many = Array.from({ length: 8 }, (_, i) => ({ file: `p#1/StructureDefinition-x${i}.json`, reason: '' }));
+  assert.match(describeSnapshotFailures(many), /\(x0, x1, x2, x3, x4, and 3 more\)/);
+  assert.match(describeSnapshotFailures(many.slice(0, 1)), /for 1 StructureDefinition \(x0\)/);
 });

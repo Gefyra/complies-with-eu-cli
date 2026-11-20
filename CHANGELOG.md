@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `validate-batch --local <path>`: package mode for a FHIR package that lies on disk instead of in a registry, for example the `package.tgz` of an IG build. `<path>` is a `.tgz` / `.tar.gz` / `.tar` file or a package folder (with `package.json`, or with a `package/` subfolder). The package is installed into `~/.fhir/packages` under the name and version from its `package.json` (a cached package with the same name and version is replaced), fhir-pkg-tool generates its snapshots and fetches its dependencies, and the run continues like package mode. No package argument is passed with `--local`.
+
+### Fixed
+
+- `validate`, `validate-batch`, `search` and `init` no longer fail with "Could not download '…' (fhir-pkg-tool exit code 6)" when a package or one of its dependencies contains a StructureDefinition whose snapshot cannot be generated (for example a logical model), although the profile to validate is not affected. The package is installed, the affected StructureDefinitions are named in a warning, and the validation runs. Only if the profile to validate itself has no snapshot, the run stops with "No snapshot could be generated for profile '…'" and the reason reported by fhir-pkg-tool.
+
 ## [2.0.2] - 2026-11-19
 
 ### Fixed
